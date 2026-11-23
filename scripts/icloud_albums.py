@@ -124,15 +124,16 @@ def video_info(path, thumb):
         return 0, 0, 0.0
     r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                         "stream=width,height:stream_tags=rotate:format=duration", "-of", "json", path],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
     j = json.loads(r.stdout or "{}")
     s = (j.get("streams") or [{}])[0]
     w, h = s.get("width", 0), s.get("height", 0)
     if str(s.get("tags", {}).get("rotate", "0")) in ("90", "-90", "270"):
         w, h = h, w
     dur = float(j.get("format", {}).get("duration", 0) or 0)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", "1" if dur > 2 else "0", "-i", path, "-frames:v", "1",
-                    "-vf", "scale=256:256:force_original_aspect_ratio=increase,crop=256:256", thumb])
+    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", "1" if dur > 2 else "0", "-i", path, "-frames:v", "1",
+                    "-vf", "scale=256:256:force_original_aspect_ratio=increase,crop=256:256", thumb],
+                   stdin=subprocess.DEVNULL)
     return w, h, dur
 
 

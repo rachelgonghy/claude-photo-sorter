@@ -246,17 +246,19 @@ def final_labels(inv):
     for f in sorted(os.listdir(LABELS)) if os.path.isdir(LABELS) else []:
         if f.endswith(".json"):
             claude.update({str(k): v for k, v in load(os.path.join(LABELS, f)).items()})
-    labels, missing = {}, 0
+    labels, unlabelled = {}, set()
     for r in inv:
         pick = claude.get(str(r["id"]))
-        missing += pick is None
+        if pick is None:
+            unlabelled.add(str(r["id"]))
         if pick not in cats or cats[pick]["kind"] != r["kind"]:
             pick = [c for c in cats.values() if c["kind"] == r["kind"]][-1]["key"]
         labels[str(r["id"])] = pick
     for k, v in load(os.path.join(WORK, "overrides.json"), {}).items():
         if k in labels and v in cats:
             labels[k] = v
-    return cats, labels, missing
+            unlabelled.discard(k)
+    return cats, labels, unlabelled
 
 
 def main():
@@ -275,11 +277,16 @@ def main():
     py = sys.executable
     subprocess.run([py, os.path.join(HERE, "dupes.py")], check=True)
     shutil.rmtree(os.path.join(WORK, "sheets"), ignore_errors=True)  # rebuild sheets for the current inventory
-    r = subprocess.run([py, os.path.join(HERE, "label_claude.py")])
-    if r.returncode:
-        print("Some label batches failed. Run this again to retry them (finished batches are kept).")
+    r = subprocess.run([py, os.path.join(HERE, "label_claude.py")], stdin=subprocess.DEVNULL)
 
-    cats, labels, missing = final_labels(inv)
+    cats, labels, unlabelled = final_labels(inv)
+    if unlabelled:
+        print(f"Claude did not choose an album for {len(unlabelled)} items. They are not added to any album; "
+              "run this again to retry them (finished batches are kept).")
+        print("  If it said \"Not logged in\": type  claude  in Terminal, then  /login , sign in, type  /exit , "
+              "and run this again.", flush=True)
+        if len(unlabelled) == len(inv):
+            sys.exit(1)
     dupes = load(os.path.join(DATA, "dupes.json"), [])
     dupe_ids = {d for g in dupes for d in g["dupes"]}
     save(os.path.join(DATA, "labels.json"), labels)
@@ -291,6 +298,8 @@ def main():
     for r in inv:
         if r["photos_id"] in placed or r["photos_id"] not in live:
             continue
+        if str(r["id"]) in unlabelled and r["id"] not in dupe_ids:
+            continue  # wait for a real label on the next run instead of a catch-all album
         name = DUPES_ALBUM if r["id"] in dupe_ids else cats[labels[str(r["id"])]]["label"]
         albums.setdefault(name, []).append(r["photos_id"])
     if not albums:
@@ -306,8 +315,6 @@ def main():
                 placed.update(pids[s:s + 200])
                 save(ADDED, sorted(placed))
         print(f"  {name:28} {len(pids) if args.dry_run else added}", flush=True)
-    if missing:
-        print(f"  ({missing} items had no label from Claude and went to the last album of their kind)")
     if not args.dry_run:
         print(f"Done. Open Photos and look under Albums > {FOLDER}. Nothing was deleted; "
               f"check \"{DUPES_ALBUM}\" and delete copies yourself if you want to.")

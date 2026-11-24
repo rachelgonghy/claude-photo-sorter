@@ -81,6 +81,8 @@ def run(n, batch):
             save(out, labels)
             return n, len(labels), res.get("total_cost_usd", 0) or 0, f"{time.time() - t0:.0f}s" + (f", try {attempt + 1}" if attempt else "")
         why = " ".join(text.split())[:160] or (r.stderr or "").strip()[:160] or "empty answer"
+        if re.search(r"hit your .{0,20}limit|usage limit", why, re.I):  # retrying can't help until the plan resets
+            raise RuntimeError(f"batch {n + 1}: {why}. Run again after that; finished batches are kept.")
         with open(os.path.join(WORK, f"claude_failed_{n:02d}.txt"), "w") as f:  # keep the raw answer for debugging
             f.write(r.stdout or r.stderr or "")
         print(f"  batch {n + 1}: try {attempt + 1} gave no usable labels ({why}), retrying", flush=True)

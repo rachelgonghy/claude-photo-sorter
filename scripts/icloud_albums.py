@@ -366,9 +366,14 @@ def download_and_preview(limit, batch, max_items=0):
         rate = (time.time() - t0) / done
         print(f"PROGRESS {done} {len(todo)}", flush=True)
         print(f"  {done}/{len(todo)} done, about {rate * (len(todo) - done) / 60:.0f} min left", flush=True)
-    if failed:
-        print(f"  {len(failed)} items could not be downloaded (listed in {os.path.relpath(FAILED)}). "
+    tried = {pid for _, pid in todo}
+    really = [pid for pid in failed if pid in tried]
+    if really:
+        print(f"  {len(really)} items could not be downloaded (listed in {os.path.relpath(FAILED)}). "
               "Run again later to retry them.", flush=True)
+    waiting = len([pid for pid in want if pid not in tried and pid not in {r["photos_id"] for r in inv}])
+    if waiting:
+        print(f"  {waiting} more items not downloaded yet: run again without --max to do them.", flush=True)
     return inv, live
 
 

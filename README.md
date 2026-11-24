@@ -49,6 +49,17 @@ The dashboard lives at **http://127.0.0.1:8765** while it's running. To open it 
 
 Press **New sort** to sort a different folder, or send the copies somewhere else.
 
+## iCloud Photos, sorted into albums (Mac)
+
+Your photos stay in iCloud; this sorts them into albums in the Photos app instead of making copies, so it needs no extra space. It downloads 40 items at a time, makes small previews and deletes the downloads.
+
+```bash
+caffeinate -i .venv/bin/python scripts/icloud_albums.py --limit 200   # try 200 first
+caffeinate -i .venv/bin/python scripts/icloud_albums.py               # everything; run again after adding photos
+```
+
+You get, under **Albums > Photo sorter**: an album per folder for everyday photos, **Trips** (found from date and location, named by Claude, with an album per place when a trip covers several), **Review - duplicates** and **Review - maybe delete** (blurry, dark and accidental shots). Nothing is ever deleted. `./start.sh` shows it all on the dashboard. Options: `--home LAT,LON`, `--away-km 100`, `--no-trips`, `--no-review`, `--redo`.
+
 ## The dashboard
 
 | | |

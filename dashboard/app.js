@@ -62,6 +62,8 @@ $("theme").onclick = () => setTheme(document.documentElement.dataset.theme === "
 let S = {};                                 // server state
 let mode = "loading";                       // setup | running | done
 let cats = [], catBy = {}, items = [], byId = {}, dupeIds = new Set(), labels = {};
+let icloud = null;                          // iCloud sort (scripts/icloud_albums.py): {trips: {id: "Japan, Mar 2025/Kyoto"}, bad: {id: reason}}
+const ICLOUD = () => S.sorted === "iCloud Photos";
 const pick = { source: null, dest: null, peek: null, advanced: false, labeler: "claude", sample: false, typing: null };
 let tiles = [], run = "idle", order = [], released = 0, landed = 0, t0 = 0;
 const queue = [], flown = new Set();
@@ -80,14 +82,23 @@ function setCats(c) {
   cats = c || [];
   catBy = Object.fromEntries(cats.map(x => [x.key, x]));
   catBy._dupes = { key: "_dupes", label: "Duplicates", emoji: "🗂️", kind: "review" };
+  catBy._bad = { key: "_bad", label: "Maybe delete", emoji: "🗑️", kind: "review" };
   $("k-ftotal").textContent = cats.length;
 }
 async function loadLibrary(withLabels) {
-  const [inv, lab, dupes, src] = await Promise.all(["inventory.json", "labels.json", "dupes.json", "source.json"].map(getJSON));
+  const [inv, lab, dupes, src, ic] = await Promise.all(["inventory.json", "labels.json", "dupes.json", "source.json", "icloud.json"].map(getJSON));
   dupeIds = new Set((dupes || []).flatMap(g => g.dupes));
   labels = withLabels && lab ? lab : {};
-  items = (inv || []).map(r => ({ ...r, cat: labels[r.id], dupe: dupeIds.has(r.id),
-    mini: `${BASE}mini/${r.id}.jpg`, src: `${BASE}thumbs/${r.id}.jpg` }));
+  icloud = withLabels && ic && src && src.sorted === "iCloud Photos" ? ic : null;
+  const trips = icloud ? icloud.trips : {}, bad = icloud ? icloud.bad : {};
+  items = (inv || []).map(r => {
+    const [trip, stop] = (trips[r.id] || "").split("/");
+    return { ...r, cat: trip ? "trip:" + trip : labels[r.id], trip, stop, bad: bad[r.id], dupe: dupeIds.has(r.id),
+      mini: `${BASE}mini/${r.id}.jpg`, src: `${BASE}thumbs/${r.id}.jpg` };
+  });
+  const tripCats = [...new Set(items.map(it => it.trip).filter(Boolean))]
+    .map(t => ({ key: "trip:" + t, label: t, emoji: "✈️", kind: "trip" }));
+  setCats(cats.filter(c => c.kind !== "trip").concat(tripCats));
   byId = Object.fromEntries(items.map(it => [it.id, it]));
   return { inv, lab, src };
 }
@@ -108,6 +119,7 @@ function setHeader() {
   $("total").hidden = !items.length || mode === "setup";
   $("total").textContent = fmt(items.length);
   $("btnOpen").hidden = !(mode === "done" && S.sorted);
+  if (ICLOUD()) $("btnOpen").lastChild.textContent = "Open Photos";
   $("btnNew").hidden = mode !== "done";
   $("k-checked-s").textContent = items.length && mode !== "setup" ? size(items.reduce((s, r) => s + r.bytes, 0)) + " in total" : "photos & videos";
   document.body.dataset.mode = mode;
@@ -115,7 +127,7 @@ function setHeader() {
 
 /* ---------- folder cards ---------- */
 function card(c) {
-  const wide = c.key === "_dupes";
+  const wide = c.kind === "review";
   const e = el("button", { class: "card" + (wide ? " wide review" : ""), onclick: () => mode === "setup" ? null : openFolder(c) },
     el("div", { class: "ch" }, el("span", {}, c.emoji || "📁"), el("span", { class: "name" }, c.label), el("span", { class: "mx-count" }, "0")),
     el("div", { class: "grid" }, Array.from({ length: wide ? 24 : 12 }, () => el("div", { class: "slot" }))));
@@ -124,7 +136,10 @@ function card(c) {
 }
 function buildCards() {
   $("photos").replaceChildren(...cats.filter(c => c.kind === "photo").map(card));
-  $("videos").replaceChildren(...cats.filter(c => c.kind === "video").map(card), card(catBy._dupes));
+  const trips = cats.filter(c => c.kind === "trip");
+  $("videos").replaceChildren(...cats.filter(c => c.kind === "video").map(card),
+    ...(trips.length ? [el("div", { class: "col-h sub" }, el("span", {}, "Trips"), el("em", {}, String(trips.length))), ...trips.map(card)] : []),
+    card(catBy._dupes), ...(icloud && Object.keys(icloud.bad).length ? [card(catBy._bad)] : []));
   Object.assign(stats, { photos: 0, videos: 0, dupes: 0, saved: 0 });
   released = landed = 0;
   flown.clear();
@@ -210,7 +225,11 @@ function fillStatic() {  // results without animation
   buildCards();
   tiles.forEach(t => { t.alive = false; t.el.style.opacity = 0; });
   items.forEach(it => { flown.add(it.id); released++; land(it, targetOf(it), false); });
-  cats.concat(catBy._dupes).forEach(c => {
+  if (catBy._bad.el) {  // "maybe delete" items also stay in their own album, so they are shown here as well
+    catBy._bad.landed = items.filter(it => it.bad);
+    catBy._bad.badge.textContent = fmt(catBy._bad.landed.length); catBy._bad.badge.classList.add("on");
+  }
+  cats.concat(catBy._dupes, catBy._bad.el ? [catBy._bad] : []).forEach(c => {
     const recent = c.landed.slice(-c.slots.length).reverse();
     c.slots.forEach((s, i) => s.replaceChildren(...(recent[i] ? [miniImg(recent[i])] : [])));
   });
@@ -431,6 +450,7 @@ function advancedBox(files) {
 }
 
 async function saveCats(next) {
+  next = next.filter(c => c.kind !== "trip");
   try { S = await api("/api/categories", { categories: next.map(({ key, kind, label, emoji, rule }) => ({ key, kind, label, emoji, rule })) }); }
   catch (e) { return; }
   setCats(S.categories); buildCards(); renderPanel();
@@ -584,7 +604,7 @@ function confirmPaid(n) {
 }
 
 function openFolders() {
-  const draft = cats.map(c => ({ ...c }));
+  const draft = cats.filter(c => c.kind !== "trip").map(c => ({ ...c }));
   const list = el("div", { class: "folder-list" });
   const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "folder";
   function row(c) {
@@ -627,7 +647,7 @@ function openFolders() {
 }
 
 function openFolder(c) {
-  const all = items.filter(i => c.key === "_dupes" ? i.dupe : !i.dupe && i.cat === c.key);
+  const all = items.filter(i => c.key === "_bad" ? i.bad : c.key === "_dupes" ? i.dupe : !i.dupe && i.cat === c.key);
   const grid = el("div", { class: "browse" });
   let shown = 0;
   const more = () => {
@@ -643,7 +663,7 @@ function openFolder(c) {
     el("div", { class: "fb-dialog wide", role: "dialog", "aria-label": c.label },
       el("div", { class: "fb-head" }, el("h2", {}, c.emoji || "📁", ` ${c.label}`, el("span", { class: "mx-count" }, fmt(all.length))),
         el("div", { class: "acts" },
-          S.sorted && !DEMO ? el("button", { class: "mx-btn small", onclick: () => api("/api/open", { folder: c.key === "_dupes" ? "_Review/duplicates" : c.label.replace(/&/g, "and").replace(/\//g, "-") }) }, icon("folder"), "Open in Finder") : null,
+          S.sorted && !DEMO ? el("button", { class: "mx-btn small", onclick: () => api("/api/open", { folder: c.key === "_dupes" ? "_Review/duplicates" : c.label.replace(/&/g, "and").replace(/\//g, "-") }) }, icon("folder"), ICLOUD() ? "Open Photos" : "Open in Finder") : null,
           el("button", { class: "mx-icon", onclick: closeAll, "aria-label": "Close" }, icon("x")))),
       all.length ? grid : el("p", { class: "mx-empty", style: "padding:22px" }, "Nothing in this folder yet."))));
 }
@@ -652,7 +672,8 @@ let lbKeys = () => {};
 function lightbox(list, i) {
   const it = list[i];
   const full = DEMO ? it.src : `/api/file/${it.id}`;
-  const media = it.kind === "video" && !DEMO ? el("video", { src: full, controls: true, autoplay: true, playsinline: true, poster: it.src }) : el("img", { src: full, alt: it.name });
+  const media = it.kind === "video" && !DEMO && !it.photos_id ? el("video", { src: full, controls: true, autoplay: true, playsinline: true, poster: it.src })
+    : el("img", { src: it.photos_id && it.kind === "video" ? it.src : full, alt: it.name, onerror: e => { e.target.onerror = null; e.target.src = it.src; } });
   const move = el("select", { class: "mx-select", "aria-label": "Move to folder", onchange: async e => {
     const key = e.target.value;
     try { await api("/api/move", { id: it.id, key }); } catch (err) { return; }
@@ -665,8 +686,9 @@ function lightbox(list, i) {
     el("div", { class: "bar" },
       el("b", {}, it.name), el("small", {}, `${size(it.bytes)}${it.taken ? " · " + new Date(it.taken * 1000).toLocaleDateString() : ""} · ${i + 1} of ${fmt(list.length)}`),
       el("span", { class: "spacer" }),
-      el("small", {}, "Move to"), move,
-      DEMO ? null : el("button", { class: "mx-btn small", onclick: () => api("/api/open", { id: it.id }) }, icon("reveal"), "Show original")),
+      it.photos_id ? el("small", {}, [it.trip && `✈️ ${it.trip}${it.stop ? " · " + it.stop : ""}`, it.bad && `🗑️ ${it.bad}`].filter(Boolean).join("  ·  "))
+        : [el("small", {}, "Move to"), move],
+      DEMO ? null : el("button", { class: "mx-btn small", onclick: () => api("/api/open", { id: it.id }) }, icon("reveal"), it.photos_id ? "Show in Photos" : "Show original")),
     el("button", { class: "nav prev", "aria-label": "Previous", onclick: () => i > 0 && lightbox(list, i - 1) }, icon("left")),
     el("button", { class: "nav next", "aria-label": "Next", onclick: () => i < list.length - 1 && lightbox(list, i + 1) }, icon("right")),
     el("button", { class: "mx-icon close", "aria-label": "Close", onclick: () => { box.remove(); document.removeEventListener("keydown", lbKeys); } }, icon("x")));

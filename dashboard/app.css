@@ -33,6 +33,7 @@ input, textarea, select { font: 13px var(--font); }
 .col { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 2px; }
 .col-h { display: flex; justify-content: space-between; margin: 0 2px 8px; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); }
 .col-h em { font-style: normal; font-variant-numeric: tabular-nums; }
+.cards > .col-h.sub { grid-column: 1 / -1; margin: 10px 2px 0; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 8px; }
 .card { position: relative; text-align: left; padding: 9px 10px 10px; border-radius: var(--r-lg); border: 1px solid var(--border);
   background: var(--surface); box-shadow: var(--shadow); color: var(--ink); transition: border-color var(--dur-2), box-shadow var(--dur-2), transform var(--dur-1); }

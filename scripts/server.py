@@ -18,6 +18,7 @@ PEEK = os.path.join(DASH, "peek")
 OVERRIDES = os.path.join(WORK, "overrides.json")
 SCRIPTS = os.path.join(ROOT, "scripts")
 PY = sys.executable
+ICLOUD_PEEK = os.path.join(WORK, "icloud", "peek")  # full-size photos fetched from Photos for the lightbox
 job = {"step": None, "running": False, "log": [], "code": None, "phase": None, "phases": [], "done": 0, "total": 0,
        "started": None, "phase_started": None, "timings": {}}
 
@@ -224,6 +225,36 @@ def open_path(path, reveal=False):
         subprocess.run(["xdg-open", os.path.dirname(path) if reveal else path])
 
 
+def icloud_file(rec):
+    """An iCloud sort deletes its downloads, so ask Photos for a full-size copy of a photo when it's opened.
+    Videos (too big to fetch on a click) fall back to their preview; "Show in Photos" plays them there."""
+    d = os.path.join(ICLOUD_PEEK, str(rec["id"]))
+    have = lambda: [os.path.join(d, f) for f in os.listdir(d) if not f.startswith(".")] if os.path.isdir(d) else []
+    if not have() and rec["kind"] == "photo" and sys.platform == "darwin":
+        os.makedirs(d, exist_ok=True)
+        script = ('on run argv\n tell application "Photos"\n'
+                  '  export {media item id (item 1 of argv)} to ((POSIX file (item 2 of argv)) as alias)\n'
+                  ' end tell\nend run')
+        try:
+            subprocess.run(["osascript", "-", rec["photos_id"], d], input=script, text=True,
+                           capture_output=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            pass
+        old = sorted(glob.glob(os.path.join(ICLOUD_PEEK, "*")), key=os.path.getmtime)[:-40]  # keep the last 40
+        for o in old:
+            shutil.rmtree(o, ignore_errors=True)
+    files = have()
+    return files[0] if files else os.path.join(DATA, "thumbs", f"{rec['id']}.jpg")
+
+
+def show_in_photos(photos_id=None):
+    script = 'on run argv\n tell application "Photos"\n  activate\n'
+    if photos_id:
+        script += '  spotlight media item id (item 1 of argv)\n'
+    script += ' end tell\nend run'
+    subprocess.run(["osascript", "-"] + ([photos_id] if photos_id else []), input=script, text=True, capture_output=True)
+
+
 def pick_folder(prompt):
     """Native macOS folder picker, shown in front of the browser."""
     if sys.platform != "darwin":
@@ -271,10 +302,15 @@ class H(SimpleHTTPRequestHandler):
     def send_original(self, i):
         inv = load(os.path.join(DATA, "inventory.json"), [])
         rec = next((r for r in inv if r["id"] == i), None)
-        if not rec or not os.path.exists(rec["path"]):
+        if not rec:
             return self.send_error(404)
         path = rec["path"]
-        if rec["ext"] in (".heic", ".heif", ".tif", ".tiff", ".bmp"):  # browsers can't show these: convert
+        if not os.path.exists(path) and rec.get("photos_id"):
+            path = icloud_file(rec)
+        if not os.path.exists(path):
+            return self.send_error(404)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in (".heic", ".heif", ".tif", ".tiff", ".bmp"):  # browsers can't show these: convert
             from PIL import Image, ImageOps
             try:
                 from pillow_heif import register_heif_opener
@@ -293,7 +329,7 @@ class H(SimpleHTTPRequestHandler):
             return self.wfile.write(b)
         size = os.path.getsize(path)
         ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
-        if rec["ext"] == ".mov":
+        if ext == ".mov":
             ctype = "video/mp4"  # most iPhone .mov files play fine as mp4
         start, end = 0, size - 1
         rng = self.headers.get("Range")
@@ -355,7 +391,12 @@ class H(SimpleHTTPRequestHandler):
                 src = load(os.path.join(DATA, "source.json"), {})
                 if body.get("id") is not None:
                     rec = next(r for r in load(os.path.join(DATA, "inventory.json")) if r["id"] == int(body["id"]))
-                    open_path(rec["path"], reveal=True)
+                    if rec.get("photos_id"):
+                        show_in_photos(rec["photos_id"])
+                    else:
+                        open_path(rec["path"], reveal=True)
+                elif src.get("sorted") == "iCloud Photos":
+                    show_in_photos()
                 elif src.get("sorted"):
                     folder = body.get("folder")
                     path = os.path.join(src["sorted"], folder) if folder else src["sorted"]

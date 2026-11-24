@@ -58,7 +58,7 @@ caffeinate -i .venv/bin/python scripts/icloud_albums.py --limit 200   # try 200 
 caffeinate -i .venv/bin/python scripts/icloud_albums.py               # everything; run again after adding photos
 ```
 
-You get, under **Albums > Photo sorter**: an album per folder for everyday photos, **Trips** (found from date and location, named by Claude, with an album per place when a trip covers several), **Review - duplicates** and **Review - maybe delete** (blurry, dark and accidental shots). Nothing is ever deleted by the tool. `./start.sh` shows it all on the dashboard; there you can tick photos and **Send to Photos to delete**, which puts them in a **To delete** album; in Photos, open it, press ⌘A then ⌘Delete (they stay in Recently Deleted for 30 days). Options: `--home LAT,LON`, `--away-km 100`, `--no-trips`, `--no-review`, `--redo`.
+You get, under **Albums > Photo sorter**: an album per folder for everyday photos, **Trips** (found from date and location, named by Claude, with an album per place when a trip covers several), **Review - duplicates** and **Review - maybe delete** (blurry, dark and accidental shots). Nothing is ever deleted by the tool. `./start.sh` shows it all on the dashboard; there you can tick photos and **Send to Photos to delete**, which puts them in a **To delete** album; in Photos, open it, press ⌘A then ⌘Delete (they stay in Recently Deleted for 30 days). Items that are only in iCloud are downloaded with Apple's PhotoKit (compiled once from `scripts/photokit_export.swift`; needs `xcode-select --install`, and macOS asks to let Terminal access Photos). Options: `--home LAT,LON`, `--away-km 100`, `--no-trips`, `--no-review`, `--redo`, `--max N`.
 
 ## The dashboard
 

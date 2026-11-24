@@ -244,7 +244,58 @@ def preview(i, pid, path):
     return rec
 
 
-def download_and_preview(limit, batch):
+PHOTOKIT_SRC = os.path.join(HERE, "photokit_export.swift")
+PHOTOKIT_BIN = os.path.join(ICLOUD, "photokit_export")
+photokit_state = {"ok": None}
+
+
+def photokit():
+    """Path to the compiled PhotoKit helper, or None (compiled once; needs Xcode Command Line Tools)."""
+    if photokit_state["ok"] is None:
+        photokit_state["ok"] = False
+        swiftc = shutil.which("swiftc")
+        if not swiftc:
+            print("  Can't download iCloud-only items: install Apple's developer tools with  xcode-select --install ,"
+                  " then run this again.", flush=True)
+        else:
+            if not os.path.exists(PHOTOKIT_BIN) or os.path.getmtime(PHOTOKIT_BIN) < os.path.getmtime(PHOTOKIT_SRC):
+                print("  Preparing the iCloud downloader (once, about a minute)...", flush=True)
+                os.makedirs(ICLOUD, exist_ok=True)
+                r = subprocess.run([swiftc, "-O", "-swift-version", "5", PHOTOKIT_SRC, "-o", PHOTOKIT_BIN], capture_output=True, text=True)
+                if r.returncode:
+                    print("  Could not build the iCloud downloader: " + (r.stderr or r.stdout).strip()[-400:], flush=True)
+            photokit_state["ok"] = os.path.exists(PHOTOKIT_BIN)
+    return PHOTOKIT_BIN if photokit_state["ok"] else None
+
+
+def download_icloud(pairs, failed):
+    """pairs: [(Photos id, folder)] that Photos' export left empty. Downloads them from iCloud with PhotoKit."""
+    tool = photokit()
+    if not tool:
+        return
+    args = [x for pid, d in pairs for x in (pid, d)]
+    try:
+        r = subprocess.run([tool, *args], capture_output=True, text=True, timeout=1500 * len(pairs),
+                           stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return
+    if "NOACCESS" in r.stdout:
+        sys.exit("macOS didn't let Terminal read your photo library. Open System Settings > Privacy & Security > "
+                 "Photos, turn on Terminal (Full access), then run this again.")
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if parts[0] == "FAIL" and len(parts) >= 3:
+            failed[parts[1]] = "iCloud: " + parts[2][:180]
+
+
+def wait_for_files(dirs, seconds):
+    """Photos can finish writing an export a little after the command returns."""
+    end = time.time() + seconds
+    while time.time() < end and any(not pick_file(d) for d in dirs):
+        time.sleep(3)
+
+
+def download_and_preview(limit, batch, max_items=0):
     print("Asking Photos for the list of items...", flush=True)
     current = [x for x in osa(LIST, []).splitlines() if x.strip()]
     live = set(current)
@@ -271,6 +322,8 @@ def download_and_preview(limit, batch):
     failed = load(FAILED, {})
     index = {pid: i for i, pid in enumerate(ids)}
     todo = [(index[pid], pid) for pid in want if pid not in have]  # failed ones are retried
+    if max_items:
+        todo = todo[:max_items]
     if not todo:
         print("All previews already made.", flush=True)
         return inv, live
@@ -291,6 +344,13 @@ def download_and_preview(limit, batch):
             parts = line.split("\t")
             if parts[0] == "FAIL" and len(parts) >= 3:
                 failed[parts[1]] = parts[2][:200]
+        empty = [(pid, d) for (i, pid), d in zip(chunk, dirs) if not pick_file(d)]
+        if empty:
+            wait_for_files([d for _, d in empty], 15)
+            empty = [(pid, d) for pid, d in empty if not pick_file(d)]
+        if empty:  # only in iCloud: Photos' export doesn't download those, PhotoKit does
+            print(f"  downloading {len(empty)} items that are only in iCloud...", flush=True)
+            download_icloud(empty, failed)
         for (i, pid), d in zip(chunk, dirs):
             path = pick_file(d)
             if path:
@@ -628,6 +688,7 @@ def main():
     ap.add_argument("--away-km", type=float, default=100, help="how far from home counts as a trip (default 100)")
     ap.add_argument("--no-trips", action="store_true", help="no trip albums")
     ap.add_argument("--no-review", action="store_true", help="don't look for photos to delete")
+    ap.add_argument("--max", type=int, default=0, help="download at most N new items this run (to test)")
     ap.add_argument("--redo", action="store_true",
                     help="put everything in albums again (delete the Photo sorter folder in Photos first)")
     args = ap.parse_args()
@@ -641,7 +702,7 @@ def main():
         if state:
             state["added"] = []
             save(BAD, state)
-    inv, live = download_and_preview(args.limit, args.batch)
+    inv, live = download_and_preview(args.limit, args.batch, args.max)
     if not inv:
         sys.exit("Nothing was downloaded from Photos, so there is nothing to sort.")
 

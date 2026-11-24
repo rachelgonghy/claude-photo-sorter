@@ -251,6 +251,7 @@ TO_DELETE = os.path.join(DATA, "to_delete.json")  # inventory ids sent to the "T
 TO_DELETE_SCRIPT = """
 on run argv
   tell application "Photos"
+   with timeout of 1800 seconds
     if not (exists folder "Photo sorter") then make new folder named "Photo sorter"
     set f to folder "Photo sorter"
     if not (exists album "To delete" of f) then make new album named "To delete" at f
@@ -262,6 +263,7 @@ on run argv
     end repeat
     if (count of itms) > 0 then add itms to album "To delete" of f
     return count of itms
+   end timeout
   end tell
 end run
 """
@@ -277,9 +279,9 @@ def send_to_delete(ids):
     if not want:
         raise ValueError("Nothing to send: pick some photos first.")
     added = 0
-    for s in range(0, len(want), 200):
-        r = subprocess.run(["osascript", "-"] + [x["photos_id"] for x in want[s:s + 200]], input=TO_DELETE_SCRIPT,
-                           text=True, capture_output=True, timeout=600)
+    for s in range(0, len(want), 50):
+        r = subprocess.run(["osascript", "-"] + [x["photos_id"] for x in want[s:s + 50]], input=TO_DELETE_SCRIPT,
+                           text=True, capture_output=True, timeout=1900)
         if r.returncode:
             if "-1743" in r.stderr or "Not authorized" in r.stderr:
                 raise ValueError("macOS blocked access to Photos: System Settings > Privacy & Security > "

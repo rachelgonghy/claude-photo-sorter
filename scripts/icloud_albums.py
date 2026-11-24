@@ -72,7 +72,9 @@ def osa(script, args, timeout=7200):
 
 LIST = """
 tell application "Photos"
-  set ids to id of every media item
+  with timeout of 1800 seconds
+    set ids to id of every media item
+  end timeout
 end tell
 set AppleScript's text item delimiters to linefeed
 return ids as text
@@ -104,9 +106,11 @@ end run
 # Days and seconds are separate because AppleScript prints big numbers as 1.7E+9.
 META_SCRIPT = """
 tell application "Photos"
-  set ids to id of every media item
-  set ds to date of every media item
-  set ls to location of every media item
+  with timeout of 1800 seconds
+    set ids to id of every media item
+    set ds to date of every media item
+    set ls to location of every media item
+  end timeout
 end tell
 set e to current date
 set day of e to 1
@@ -149,6 +153,7 @@ on run argv
     set AppleScript's text item delimiters to ""
   end if
   tell application "Photos"
+   with timeout of 1800 seconds
     if not (exists folder "%s") then make new folder named "%s"
     set f to folder "%s"
     repeat with p in parts
@@ -166,6 +171,7 @@ on run argv
     end repeat
     if (count of itms) > 0 then add itms to a
     return count of itms
+   end timeout
   end tell
 end run
 """ % ((FOLDER,) * 3)
@@ -597,16 +603,20 @@ def write_dashboard(inv, cats, labels, dupe_ids, trip_of, bad, live=None):
 
 # ---------- albums ----------
 
-def add_albums(albums, args):
-    """albums: {(subfolder, name): [Photos ids]}. Returns {(subfolder, name): count added}."""
-    counts = {}
-    for (sub, name), pids in albums.items():
-        n = 0
-        if not args.dry_run:
-            for s in range(0, len(pids), 200):
-                n += int(osa(ALBUM_SCRIPT, [sub, name] + pids[s:s + 200]).strip() or 0)
-        counts[(sub, name)] = len(pids) if args.dry_run else n
-    return counts
+def add_to_album(sub, name, pids):
+    """Adds Photos ids to one album, 50 at a time. If Photos is too busy to answer, waits and tries again."""
+    n = 0
+    for s in range(0, len(pids), 50):
+        for attempt in range(4):
+            try:
+                n += int(osa(ALBUM_SCRIPT, [sub, name] + pids[s:s + 50]).strip() or 0)
+                break
+            except (RuntimeError, subprocess.TimeoutExpired) as e:
+                if attempt == 3 or not ("-1712" in str(e) or "timed out" in str(e) or isinstance(e, subprocess.TimeoutExpired)):
+                    raise
+                print(f"    Photos is busy, waiting a minute and trying again ({attempt + 1}/3)...", flush=True)
+                time.sleep(60)
+        yield pids[s:s + 50], n
 
 
 def main():
@@ -683,14 +693,15 @@ def main():
     print(f"{verb} items to albums in the \"{FOLDER}\" folder in Photos:", flush=True)
     order = sorted(albums, key=lambda k: (k[1].startswith("Review"), k[0] != "", k[1]))
     for k in order:
-        n = add_albums({k: albums[k]}, args)[k]
+        n = len(albums[k])
         if not args.dry_run:
-            if k == ("", BAD_ALBUM):
-                state["added"] = sorted(set(state["added"]) | set(albums[k]))
-                save(BAD, state)
-            else:
-                placed.update(albums[k])
-                save(ADDED, sorted(placed))
+            for done, n in add_to_album(k[0], k[1], albums[k]):  # saved after every 50, so a stop loses nothing
+                if k == ("", BAD_ALBUM):
+                    state["added"] = sorted(set(state["added"]) | set(done))
+                    save(BAD, state)
+                else:
+                    placed.update(done)
+                    save(ADDED, sorted(placed))
         print(f"  {(k[0].replace('/', ' > ') + ' > ' if k[0] else '') + k[1]:48} {n}", flush=True)
     if not args.dry_run:
         print(f"Done. Open Photos and look under Albums > {FOLDER}. Nothing was deleted; check "

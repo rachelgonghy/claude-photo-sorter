@@ -240,11 +240,55 @@ def icloud_file(rec):
                            capture_output=True, timeout=120)
         except subprocess.TimeoutExpired:
             pass
-        old = sorted(glob.glob(os.path.join(ICLOUD_PEEK, "*")), key=os.path.getmtime)[:-40]  # keep the last 40
+        old = sorted(glob.glob(os.path.join(ICLOUD_PEEK, "*")), key=os.path.getmtime)[:-300]  # keep the last 300
         for o in old:
             shutil.rmtree(o, ignore_errors=True)
     files = have()
     return files[0] if files else os.path.join(DATA, "thumbs", f"{rec['id']}.jpg")
+
+
+TO_DELETE = os.path.join(DATA, "to_delete.json")  # inventory ids sent to the "To delete" album
+TO_DELETE_SCRIPT = """
+on run argv
+  tell application "Photos"
+    if not (exists folder "Photo sorter") then make new folder named "Photo sorter"
+    set f to folder "Photo sorter"
+    if not (exists album "To delete" of f) then make new album named "To delete" at f
+    set itms to {}
+    repeat with i from 1 to count of argv
+      try
+        set end of itms to media item id (item i of argv)
+      end try
+    end repeat
+    if (count of itms) > 0 then add itms to album "To delete" of f
+    return count of itms
+  end tell
+end run
+"""
+
+
+def send_to_delete(ids):
+    """Adds items to Photo sorter > To delete in Photos. Photos lets no other app delete photos,
+    so the person deletes them there (select all, Command-Delete); they stay in Recently Deleted for 30 days."""
+    if sys.platform != "darwin":
+        raise ValueError("This works on a Mac with the Photos app.")
+    inv = {r["id"]: r for r in load(os.path.join(DATA, "inventory.json"), [])}
+    want = [inv[int(i)] for i in ids if int(i) in inv and inv[int(i)].get("photos_id")]
+    if not want:
+        raise ValueError("Nothing to send: pick some photos first.")
+    added = 0
+    for s in range(0, len(want), 200):
+        r = subprocess.run(["osascript", "-"] + [x["photos_id"] for x in want[s:s + 200]], input=TO_DELETE_SCRIPT,
+                           text=True, capture_output=True, timeout=600)
+        if r.returncode:
+            if "-1743" in r.stderr or "Not authorized" in r.stderr:
+                raise ValueError("macOS blocked access to Photos: System Settings > Privacy & Security > "
+                                 "Automation, turn on Photos under Terminal.")
+            raise ValueError("Photos said: " + r.stderr.strip()[:200])
+        added += int(r.stdout.strip() or 0)
+    marked = sorted(set(load(TO_DELETE, [])) | {x["id"] for x in want})
+    save(TO_DELETE, marked)
+    return {"added": added, "marked": marked}
 
 
 def show_in_photos(photos_id=None):
@@ -324,6 +368,7 @@ class H(SimpleHTTPRequestHandler):
             b = buf.getvalue()
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Cache-Control", "private, max-age=86400")
             self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             return self.wfile.write(b)
@@ -340,6 +385,7 @@ class H(SimpleHTTPRequestHandler):
                 end = min(int(m.group(2)) if m.group(2) else size - 1, size - 1)
         self.send_response(206 if rng else 200)
         self.send_header("Content-Type", ctype)
+        self.send_header("Cache-Control", "private, max-age=86400")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(end - start + 1))
         if rng:
@@ -380,6 +426,8 @@ class H(SimpleHTTPRequestHandler):
                     raise ValueError("Keep at least one photo folder and one video folder.")
                 save(CATEGORIES, cats)
                 save(os.path.join(DATA, "categories.json"), cats)
+            elif p == "/api/to_delete":
+                return self.send_json(send_to_delete(body.get("ids") or []))
             elif p == "/api/move":
                 ov = load(OVERRIDES, {})
                 ov[str(body["id"])] = body["key"]

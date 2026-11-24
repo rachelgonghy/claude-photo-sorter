@@ -196,3 +196,18 @@ input, textarea, select { font: 13px var(--font); }
   .topbar .mx-pill { display: none; }
   #btnNew { width: 34px; padding: 0; font-size: 0; gap: 0; }
 }
+
+/* iCloud: pick photos to send to the "To delete" album */
+.sel-hint { margin: 0; padding: 10px 22px 0; font-size: 12.5px; color: var(--faint); }
+.browse .tick, .browse .gone { position: absolute; top: 6px; right: 6px; display: none; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-size: 12px; }
+.browse .tick { background: #0007; color: #fff; border: 2px solid #fff; }
+.selecting .browse .tick { display: grid; color: transparent; }
+.selecting .browse button.sel .tick { background: #2f7d4f; color: #fff; }
+.selecting .browse button.sel img { transform: scale(.9); }
+.browse button.marked .gone { display: grid; background: #fffd; }
+.selecting .browse button.marked .gone { display: none; }
+.browse button.marked img { opacity: .55; }
+.lightbox .media { position: relative; }
+.lightbox .media .loading { display: none; position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: #000a; color: #fff; font-size: 12px; white-space: nowrap; }
+.lightbox .media img.pending { filter: blur(1.5px); }
+.lightbox .media img.pending + .loading { display: block; }

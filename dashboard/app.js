@@ -86,14 +86,15 @@ function setCats(c) {
   $("k-ftotal").textContent = cats.length;
 }
 async function loadLibrary(withLabels) {
-  const [inv, lab, dupes, src, ic] = await Promise.all(["inventory.json", "labels.json", "dupes.json", "source.json", "icloud.json"].map(getJSON));
+  const [inv, lab, dupes, src, ic, del] = await Promise.all(["inventory.json", "labels.json", "dupes.json", "source.json", "icloud.json", "to_delete.json"].map(getJSON));
   dupeIds = new Set((dupes || []).flatMap(g => g.dupes));
   labels = withLabels && lab ? lab : {};
   icloud = withLabels && ic && src && src.sorted === "iCloud Photos" ? ic : null;
   const trips = icloud ? icloud.trips : {}, bad = icloud ? icloud.bad : {};
-  items = (inv || []).map(r => {
+  const gone = new Set(icloud && icloud.gone || []), marked = new Set(icloud ? del || [] : []);
+  items = (inv || []).filter(r => !gone.has(r.id)).map(r => {
     const [trip, stop] = (trips[r.id] || "").split("/");
-    return { ...r, cat: trip ? "trip:" + trip : labels[r.id], trip, stop, bad: bad[r.id], dupe: dupeIds.has(r.id),
+    return { ...r, cat: trip ? "trip:" + trip : labels[r.id], trip, stop, bad: bad[r.id], marked: marked.has(r.id), dupe: dupeIds.has(r.id),
       mini: `${BASE}mini/${r.id}.jpg`, src: `${BASE}thumbs/${r.id}.jpg` };
   });
   const tripCats = [...new Set(items.map(it => it.trip).filter(Boolean))]
@@ -646,34 +647,85 @@ function openFolders() {
         el("button", { class: "mx-btn solid", onclick: saveIt }, "Save folders")))));
 }
 
+async function sendToDelete(list) {  // adds to Photo sorter > To delete in Photos; the person deletes them there
+  const r = await api("/api/to_delete", { ids: list.map(it => it.id) });
+  const marked = new Set(r.marked);
+  items.forEach(it => it.marked = marked.has(it.id));
+  toast(`${fmt(list.length)} added to "To delete" in Photos. In Photos, open it, press ⌘A then ⌘Delete to delete them everywhere.`);
+}
+
 function openFolder(c) {
   const all = items.filter(i => c.key === "_bad" ? i.bad : c.key === "_dupes" ? i.dupe : !i.dupe && i.cat === c.key);
   const grid = el("div", { class: "browse" });
-  let shown = 0;
+  const canDelete = ICLOUD() && !DEMO;
+  const sel = new Set(), tiles = new Map();
+  let selecting = false, shown = 0;
+  const paint = () => {
+    tiles.forEach((b, id) => { b.classList.toggle("sel", sel.has(id)); b.classList.toggle("marked", !!byId[id].marked); });
+    dialog.classList.toggle("selecting", selecting);
+    selBtn.lastChild.textContent = selecting ? "Done" : "Select";
+    allBtn.hidden = !selecting;
+    allBtn.lastChild.textContent = sel.size === all.length ? "Select none" : "Select all";
+    sendBtn.hidden = !selecting || !sel.size;
+    sendBtn.lastChild.textContent = `Send ${fmt(sel.size)} to Photos to delete`;
+  };
   const more = () => {
     grid.querySelector(".more")?.remove();
     const from = shown;
-    all.slice(from, from + 120).forEach((it, k) => grid.append(el("button", { onclick: () => lightbox(all, from + k), "aria-label": it.name },
-      el("img", { src: it.src, alt: "", loading: "lazy" }), it.kind === "video" ? el("span", { class: "vid" }, "▶ " + (it.duration ? Math.round(it.duration) + "s" : "video")) : null)));
+    all.slice(from, from + 120).forEach((it, k) => {
+      const b = el("button", { "aria-label": it.name, onclick: () => {
+          if (!selecting) return lightbox(all, from + k);
+          sel.has(it.id) ? sel.delete(it.id) : sel.add(it.id); paint();
+        } },
+        el("img", { src: it.src, alt: "", loading: "lazy" }),
+        it.kind === "video" ? el("span", { class: "vid" }, "▶ " + (it.duration ? Math.round(it.duration) + "s" : "video")) : null,
+        canDelete ? el("span", { class: "tick", "aria-hidden": "true" }, "✓") : null,
+        canDelete ? el("span", { class: "gone", title: "In the To delete album" }, "🗑️") : null);
+      tiles.set(it.id, b); grid.append(b);
+    });
     shown += 120;
     if (shown < all.length) grid.append(el("button", { class: "mx-btn more", onclick: more }, `Show ${fmt(Math.min(120, all.length - shown))} more`));
+    if (canDelete) paint();
   };
+  const selBtn = el("button", { class: "mx-btn small", onclick: () => { selecting = !selecting; if (!selecting) sel.clear(); paint(); } }, icon("check"), "Select");
+  const allBtn = el("button", { class: "mx-btn small", hidden: true, onclick: () => {
+    if (sel.size === all.length) sel.clear(); else all.forEach(it => sel.add(it.id));
+    paint(); } }, "Select all");
+  const sendBtn = el("button", { class: "mx-btn small solid", hidden: true, onclick: async () => {
+    try { await sendToDelete(all.filter(it => sel.has(it.id))); } catch (e) { return; }
+    sel.clear(); selecting = false; paint(); } }, icon("trash"), "Send to Photos to delete");
+  const dialog = el("div", { class: "fb-dialog wide", role: "dialog", "aria-label": c.label },
+    el("div", { class: "fb-head" }, el("h2", {}, c.emoji || "📁", ` ${c.label}`, el("span", { class: "mx-count" }, fmt(all.length))),
+      el("div", { class: "acts" },
+        canDelete && all.length ? [selBtn, allBtn, sendBtn] : null,
+        S.sorted && !DEMO ? el("button", { class: "mx-btn small", onclick: () => api("/api/open", { folder: c.key === "_dupes" ? "_Review/duplicates" : c.label.replace(/&/g, "and").replace(/\//g, "-") }) }, icon("folder"), ICLOUD() ? "Open Photos" : "Open in Finder") : null,
+        el("button", { class: "mx-icon", onclick: closeAll, "aria-label": "Close" }, icon("x")))),
+    canDelete && all.length ? el("p", { class: "sel-hint" }, "Pick photos, then send them to the “To delete” album in Photos. You delete them there (⌘A, then ⌘Delete), and they stay in Recently Deleted for 30 days.") : null,
+    all.length ? grid : el("p", { class: "mx-empty", style: "padding:22px" }, "Nothing in this folder yet."));
   more();
-  overlay(el("div", { class: "fb-scrim", onclick: e => e.target === e.currentTarget && closeAll() },
-    el("div", { class: "fb-dialog wide", role: "dialog", "aria-label": c.label },
-      el("div", { class: "fb-head" }, el("h2", {}, c.emoji || "📁", ` ${c.label}`, el("span", { class: "mx-count" }, fmt(all.length))),
-        el("div", { class: "acts" },
-          S.sorted && !DEMO ? el("button", { class: "mx-btn small", onclick: () => api("/api/open", { folder: c.key === "_dupes" ? "_Review/duplicates" : c.label.replace(/&/g, "and").replace(/\//g, "-") }) }, icon("folder"), ICLOUD() ? "Open Photos" : "Open in Finder") : null,
-          el("button", { class: "mx-icon", onclick: closeAll, "aria-label": "Close" }, icon("x")))),
-      all.length ? grid : el("p", { class: "mx-empty", style: "padding:22px" }, "Nothing in this folder yet."))));
+  overlay(el("div", { class: "fb-scrim", onclick: e => e.target === e.currentTarget && closeAll() }, dialog));
 }
 
 let lbKeys = () => {};
 function lightbox(list, i) {
   const it = list[i];
   const full = DEMO ? it.src : `/api/file/${it.id}`;
-  const media = it.kind === "video" && !DEMO && !it.photos_id ? el("video", { src: full, controls: true, autoplay: true, playsinline: true, poster: it.src })
-    : el("img", { src: it.photos_id && it.kind === "video" ? it.src : full, alt: it.name, onerror: e => { e.target.onerror = null; e.target.src = it.src; } });
+  let media;
+  if (it.photos_id) {  // iCloud: Photos fetches the full photo, which can take a few seconds. Show the preview meanwhile.
+    media = el("img", { src: it.src, alt: it.name, class: it.kind === "photo" ? "pending" : "" });
+    if (it.kind === "photo") {
+      const big = new Image();
+      big.onload = () => { media.src = big.src; media.classList.remove("pending"); };
+      big.onerror = () => media.classList.remove("pending");
+      big.src = full;
+    }
+    [i + 1, i + 2, i - 1].forEach(j => { const n = list[j]; if (n && n.kind === "photo") new Image().src = `/api/file/${n.id}`; });
+  } else media = it.kind === "video" && !DEMO ? el("video", { src: full, controls: true, autoplay: true, playsinline: true, poster: it.src })
+    : el("img", { src: full, alt: it.name });
+  const markBtn = it.photos_id && !DEMO ? el("button", { class: "mx-btn small", disabled: !!it.marked, onclick: async e => {
+    try { await sendToDelete([it]); } catch (err) { return; }
+    e.currentTarget.disabled = true; e.currentTarget.lastChild.textContent = "In To delete"; } },
+    icon("trash"), it.marked ? "In To delete" : "Send to delete") : null;
   const move = el("select", { class: "mx-select", "aria-label": "Move to folder", onchange: async e => {
     const key = e.target.value;
     try { await api("/api/move", { id: it.id, key }); } catch (err) { return; }
@@ -682,12 +734,13 @@ function lightbox(list, i) {
     fillStatic(); showDone(false);
   } }, cats.filter(c => c.kind === it.kind).map(c => el("option", { value: c.key, selected: c.key === it.cat }, `${c.emoji || ""} ${c.label}`)));
   const box = el("div", { class: "lightbox", role: "dialog", "aria-label": it.name },
-    el("div", { class: "media" }, media),
+    el("div", { class: "media" }, media, it.photos_id && it.kind === "photo" ? el("span", { class: "loading" }, "Getting full size from Photos…") : null),
     el("div", { class: "bar" },
       el("b", {}, it.name), el("small", {}, `${size(it.bytes)}${it.taken ? " · " + new Date(it.taken * 1000).toLocaleDateString() : ""} · ${i + 1} of ${fmt(list.length)}`),
       el("span", { class: "spacer" }),
       it.photos_id ? el("small", {}, [it.trip && `✈️ ${it.trip}${it.stop ? " · " + it.stop : ""}`, it.bad && `🗑️ ${it.bad}`].filter(Boolean).join("  ·  "))
         : [el("small", {}, "Move to"), move],
+      markBtn,
       DEMO ? null : el("button", { class: "mx-btn small", onclick: () => api("/api/open", { id: it.id }) }, icon("reveal"), it.photos_id ? "Show in Photos" : "Show original")),
     el("button", { class: "nav prev", "aria-label": "Previous", onclick: () => i > 0 && lightbox(list, i - 1) }, icon("left")),
     el("button", { class: "nav next", "aria-label": "Next", onclick: () => i < list.length - 1 && lightbox(list, i + 1) }, icon("right")),

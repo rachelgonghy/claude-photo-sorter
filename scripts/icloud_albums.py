@@ -580,12 +580,16 @@ def review_bad(inv):
 
 # ---------- dashboard ----------
 
-def write_dashboard(inv, cats, labels, dupe_ids, trip_of, bad):
+def write_dashboard(inv, cats, labels, dupe_ids, trip_of, bad, live=None):
     """What ./start.sh shows: the same cards as a folder sort, plus trips and "Maybe delete"."""
     save(os.path.join(DATA, "labels.json"), labels)
     shutil.copy(CATEGORIES, os.path.join(DATA, "categories.json"))
     save(os.path.join(DATA, "icloud.json"), {"trips": {str(k): v for k, v in trip_of.items()},
-                                             "bad": {str(k): v for k, v in bad.items()}})
+                                             "bad": {str(k): v for k, v in bad.items()},
+                                             # deleted in Photos since they were sorted: hidden on the dashboard
+                                             "gone": [r["id"] for r in inv if live is not None and r["photos_id"] not in live]})
+    if not os.path.exists(os.path.join(DATA, "to_delete.json")):  # filled by "Send to Photos to delete" on the dashboard
+        save(os.path.join(DATA, "to_delete.json"), [])
     src = load(os.path.join(DATA, "source.json"), {})
     src["sorted"] = "iCloud Photos"  # tells the dashboard the sort is finished
     save(os.path.join(DATA, "source.json"), src)
@@ -648,7 +652,7 @@ def main():
     dupe_ids = {d for g in dupes for d in g["dupes"]}
     trip_of = {} if args.no_trips else trip_albums(inv, labels, args)
     bad = {} if args.no_review else review_bad(inv)
-    write_dashboard(inv, cats, labels, dupe_ids, trip_of, bad)
+    write_dashboard(inv, cats, labels, dupe_ids, trip_of, bad, live)
 
     # Only items not placed before: albums you tidied by hand are left alone on later runs.
     placed = set(load(ADDED, []))

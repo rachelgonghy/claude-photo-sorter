@@ -608,12 +608,12 @@ def review_bad(inv):
     state = load(BAD, {"checked": [], "bad": {}, "added": []})
     checked = set(state["checked"])
     sheet_dir = os.path.join(WORK, "sheets")
-    sheets = sorted(f for f in os.listdir(sheet_dir) if f.startswith("sheet_")) if os.path.isdir(sheet_dir) else []
+    num = lambda f: int(f[6:-4])  # "sheet_12.jpg" -> 12; sorted by number, so sheet_100 comes after sheet_99
+    sheets = sorted((f for f in os.listdir(sheet_dir) if f.startswith("sheet_")), key=num) if os.path.isdir(sheet_dir) else []
     batches = []
     for s in range(0, len(sheets), 3):
         group = sheets[s:s + 3]
-        first, last = int(group[0][6:-4]) * 30, (int(group[-1][6:-4]) + 1) * 30
-        ids = [r["id"] for r in inv[first:last]]
+        ids = [r["id"] for g in group for r in inv[num(g) * 30:(num(g) + 1) * 30]]
         if not set(ids) <= checked:
             batches.append(([os.path.join(sheet_dir, g) for g in group], ids))
     if batches:

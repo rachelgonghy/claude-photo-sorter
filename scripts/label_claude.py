@@ -26,7 +26,8 @@ if not claude:
 sheet_dir = os.path.join(WORK, "sheets")
 if not glob.glob(os.path.join(sheet_dir, "sheet_*.jpg")):
     subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "sheets.py")], check=True)
-sheets = sorted(glob.glob(os.path.join(sheet_dir, "sheet_*.jpg")))
+sheet_no = lambda p: int(re.search(r"sheet_(\d+)", p).group(1))
+sheets = sorted(glob.glob(os.path.join(sheet_dir, "sheet_*.jpg")), key=sheet_no)  # by number: sheet_100 comes after sheet_99, not sheet_10
 inv = load(os.path.join(DATA, "inventory.json"))
 cats = categories()
 os.makedirs(LABELS, exist_ok=True)
@@ -38,9 +39,8 @@ if "--only" in sys.argv:
 
 
 def ids_in(batch):
-    first = int(re.search(r"sheet_(\d+)", batch[0]).group(1)) * 30
-    last = (int(re.search(r"sheet_(\d+)", batch[-1]).group(1)) + 1) * 30
-    return [str(r["id"]) for r in inv[first:last]]
+    """The ids on these sheets: sheet k shows inventory entries k*30 to k*30+29."""
+    return [str(r["id"]) for p in batch for r in inv[sheet_no(p) * 30:(sheet_no(p) + 1) * 30]]
 
 
 def run(n, batch):

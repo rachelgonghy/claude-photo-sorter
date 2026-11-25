@@ -157,7 +157,8 @@ def intro(ch):
         "You write for a family travel scrapbook, in the voice of a thoughtful travel and family magazine: warm, "
         "calm, specific, never gushing. Chapter: "
         f"{ch['title']}, {ch['dates']}. Its {'places' if trip else 'months'}, with the captions of the photos in each:\n{lines}\n\n"
-        "Write \"intro\": one or two sentences, at most 30 words, that open the chapter."
+        "Write \"intro\": one short sentence, at most 16 words, that opens the chapter; it is set large over "
+        "the chapter's opening photo."
         + (" Also write one highlight line per place, at most 12 words, saying what that place was about in these "
            "photos (\"Temple gates, bamboo paths and slow mornings\")." if trip and len(ch["pages"]) > 1 else "")
         + " Use only what the captions and place names tell you: no names, no invented events, no exclamation "
@@ -363,8 +364,14 @@ def main():
         out_ch.append(c)
 
     years = sorted({dt(when[i]).year for i in ok})
+    nt, ny = sum(c["kind"] == "trip" for c in out_ch), sum(c["kind"] == "year" for c in out_ch)
+    words = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
+    num = lambda n: words[n] if n < len(words) else str(n)
     book = {"title": args.title, "span": f"{years[0]}–{years[-1]}" if len(years) > 1 else str(years[0]) if years else "",
-            "subtitle": f"{sum(c['kind'] == 'trip' for c in out_ch)} trips and life at home, chosen from {len(ok):,} photos",
+            "subtitle": "The trips we took and the days in between" if nt else "The days that make a year",
+            "lead": f"{num(nt)} {'trip' if nt == 1 else 'trips'}, {num(ny).lower()} {'year' if ny == 1 else 'years'} at home,",
+            "rest": f"chosen from {len(ok):,} of our photos and kept in one place.",
+            "cover": next((c["cover"] for c in out_ch if c["kind"] == "trip"), out_ch[0]["cover"] if out_ch else ""),
             "note": f"Made {datetime.now():%d %b %Y} from our iCloud Photos.", "chapters": out_ch}
     save(os.path.join(SITE, "data.json"), book)
     shutil.copy(os.path.join(HERE, "scrapbook_page.html"), os.path.join(SITE, "index.html"))

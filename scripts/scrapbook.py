@@ -335,6 +335,7 @@ def main():
     ap.add_argument("--preview", action="store_true", help="open the finished scrapbook in the browser")
     ap.add_argument("--look", choices=list(LOOKS), default="natural", help="photo finish (default natural)")
     ap.add_argument("--restore", action="store_true", help="put back the photos and clips removed by hand")
+    ap.add_argument("--no-open", action="store_true", help="with --preview: don't open a browser (the Mac app shows it)")
     args = ap.parse_args()
     if args.restore and os.path.exists(REMOVED):
         os.remove(REMOVED)
@@ -537,10 +538,10 @@ def main():
         print("To share it: open Claude Code in this folder and ask it to \"publish my scrapbook\".")
     assemble()
     if args.preview:
-        preview(assemble)
+        preview(assemble, open_it=not args.no_open)
 
 
-def preview(assemble, port=8790):
+def preview(assemble, port=8790, open_it=True):
     """Serve the book on this Mac only. POST api/remove takes a photo or clip out and fills its place."""
     import threading
     from functools import partial
@@ -583,7 +584,8 @@ def preview(assemble, port=8790):
 
     srv = ThreadingHTTPServer(("127.0.0.1", port), partial(H, directory=SITE))
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    subprocess.run(["open", f"http://127.0.0.1:{port}/"])
+    if open_it:
+        subprocess.run(["open", f"http://127.0.0.1:{port}/"])
     print(f"Preview at http://127.0.0.1:{port}/ (press Control-C to stop)")
     try:
         while True:

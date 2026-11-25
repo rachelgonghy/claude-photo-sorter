@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Photo Scrapbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;700;800&display=swap">
+<style>
+/* The Mac app: the scrapbook's dark world, three numbered steps (they are a real order), one progress panel. */
+:root{--bg:#0b0b0d;--card:#151518;--card2:#1d1d21;--fg:#f6f6f7;--fg2:#a2a2a8;--dim:#5d5d63;--rule:#26262b;--pill:#f6f6f7;--pillInk:#0b0b0d;
+  --ok:#7fd1a1;--warn:#f0b86b;--bad:#ff8a80;--sans:"Inter Tight","Helvetica Neue",Arial,system-ui,sans-serif;--mono:ui-monospace,Menlo,monospace;color-scheme:dark}
+*{box-sizing:border-box}[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--sans);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+main{max-width:1180px;margin:0 auto;padding:28px max(24px,env(safe-area-inset-right,0px)) 56px max(24px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:24px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
+header{display:flex;justify-content:space-between;align-items:center;gap:16px}
+header b{font:800 18px/1 var(--sans);letter-spacing:-.02em;text-transform:uppercase}
+.link{font:500 14px/1 var(--sans);color:var(--fg2)}.link:hover{color:var(--fg)}
+h1{font:700 clamp(30px,4.4vw,56px)/1.06 var(--sans);letter-spacing:-.035em;margin:8px 0 0;max-width:24ch;text-wrap:balance}
+h1 span{color:var(--dim)}
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media (max-width:860px){.steps{grid-template-columns:minmax(0,1fr)}}
+.step{background:var(--card);border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:16px;min-height:260px}
+.step .n{font:500 13px/1 var(--sans);color:var(--fg2)}
+.step h2{font:800 clamp(26px,2.6vw,34px)/.92 var(--sans);letter-spacing:-.04em;text-transform:uppercase;margin:0}
+.step p{margin:0;color:var(--fg2);min-height:3em}
+.step .acts{margin-top:auto;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.pill{display:inline-flex;align-items:center;min-height:42px;padding:0 22px;border-radius:999px;background:var(--pill);color:var(--pillInk);font:700 15px/1 var(--sans)}
+.pill:hover{opacity:.9}.pill:disabled{opacity:.35;cursor:default}
+.ghost{font:500 14px/1 var(--sans);color:var(--fg2);min-height:42px}.ghost:hover{color:var(--fg)}.ghost:disabled{opacity:.35;cursor:default}
+.qr{display:flex;gap:16px;align-items:center}
+.qr div{width:112px;height:112px;flex:none;background:#fff;border-radius:10px;padding:6px}
+.qr svg{width:100%;height:100%;display:block}
+.qr small{color:var(--fg2);font-size:13px;line-height:1.45}
+.url{font:500 13px/1.4 var(--mono);color:var(--fg);word-break:break-all}
+.panel{background:var(--card);border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:16px}
+.panel .head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.panel h3{font:700 22px/1.1 var(--sans);letter-spacing:-.02em;margin:0}
+.bar{height:6px;border-radius:3px;background:var(--card2);overflow:hidden}
+.bar div{height:100%;background:var(--fg);width:0;transition:width .4s ease}
+.bar.wait div{width:30%;animation:slide 1.4s ease-in-out infinite}
+@keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+@media (prefers-reduced-motion:reduce){.bar.wait div{animation:none;width:100%;opacity:.4}}
+pre{margin:0;font:400 12px/1.6 var(--mono);color:var(--fg2);white-space:pre-wrap;max-height:180px;overflow:auto}
+.msg{padding:12px 16px;border-radius:10px;background:var(--card2)}
+.msg.ok{color:var(--ok)}.msg.bad{color:var(--bad)}.msg.warn{color:var(--warn)}
+.settings{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:end}
+@media (max-width:860px){.settings{grid-template-columns:minmax(0,1fr)}}
+label{display:flex;flex-direction:column;gap:8px;font:500 13px/1.3 var(--sans);color:var(--fg2)}
+input[type=text]{font:500 16px/1 var(--sans);color:var(--fg);background:var(--card2);border:1px solid var(--rule);border-radius:10px;padding:12px 14px;min-height:44px}
+.seg{display:flex;background:var(--card2);border-radius:999px;padding:3px;gap:2px}
+.seg button{flex:1;min-height:38px;border-radius:999px;font:500 14px/1 var(--sans);color:var(--fg2)}
+.seg button[aria-pressed=true]{background:var(--fg);color:var(--pillInk);font-weight:700}
+.toggle{flex-direction:row;align-items:center;gap:12px;min-height:44px;color:var(--fg)}
+.toggle input{width:20px;height:20px;accent-color:var(--fg)}
+.toggle span small{display:block;color:var(--fg2);font-weight:400}
+</style></head><body>
+<main>
+  <header><b>Photo Scrapbook</b><button class="link" id="openPhotos">Open Photos</button></header>
+  <h1 id="summary">Your photos, sorted and made into a scrapbook. <span>Loading…</span></h1>
+
+  <div class="steps">
+    <section class="step"><span class="n">01</span><h2>Sort new photos</h2><p id="sortInfo"></p>
+      <div class="acts"><button class="pill" id="sortBtn">Sort new photos</button><button class="ghost" id="dashBtn">Open sorter</button></div></section>
+    <section class="step"><span class="n">02</span><h2>Scrapbook</h2><p id="bookInfo"></p>
+      <div class="acts"><button class="pill" id="buildBtn">Make scrapbook</button><button class="ghost" id="openBook">Open and edit</button></div></section>
+    <section class="step"><span class="n">03</span><h2>Share</h2><p id="shareInfo"></p>
+      <div class="qr" id="qrBox" hidden><div id="qr"></div><small>Point your phone's camera here to open it, then Share → <b>Add to Home Screen</b> to keep it like an app.</small></div>
+      <div class="acts"><button class="pill" id="pubBtn">Publish</button><button class="ghost" id="openLink" hidden>Open link</button><button class="ghost" id="copyLink" hidden>Copy link</button></div></section>
+  </div>
+
+  <section class="panel" id="jobPanel" hidden>
+    <div class="head"><h3 id="jobName"></h3><span><span class="link" id="jobTime"></span>&nbsp;&nbsp;<button class="ghost" id="stopBtn">Stop</button></span></div>
+    <div class="bar" id="bar"><div></div></div>
+    <div class="msg" id="jobMsg" hidden></div>
+    <pre id="log"></pre>
+  </section>
+
+  <section class="panel">
+    <div class="head"><h3>Settings</h3><span class="link" id="saved"></span></div>
+    <div class="settings">
+      <label for="title">Scrapbook name<input type="text" id="title" autocomplete="off"></label>
+      <label>Photo finish<div class="seg" id="look"><button data-v="natural">Natural</button><button data-v="rich">Rich</button><button data-v="none">None</button></div></label>
+      <label class="toggle" for="light"><input type="checkbox" id="light"><span>Use less of my Claude plan<small>A lighter model for sorting and choosing</small></span></label>
+    </div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n || 0).toLocaleString();
+const ago = t => { if (!t) return ""; const d = new Date(t * 1000); return d.toLocaleDateString([], {day: "numeric", month: "short"}) + ", " + d.toLocaleTimeString([], {hour: "numeric", minute: "2-digit"}); };
+let S = null, timer = null;
+
+async function api(path, body) {
+  const r = await fetch(path, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {cache: "no-store"});
+  const j = await r.json();
+  if (j.error) { showMsg(j.error, "bad"); throw new Error(j.error); }
+  return j;
+}
+function showMsg(t, kind) { $("jobPanel").hidden = false; const m = $("jobMsg"); m.hidden = false; m.className = "msg " + (kind || ""); m.textContent = t; }
+
+function explain(log) {  // plain words for the usual problems
+  const t = log.join("\n");
+  if (/hit your .{0,20}limit|usage limit/i.test(t)) return ["You've reached your Claude plan's limit for now. Try again after it resets; everything finished so far is kept.", "warn"];
+  if (/Not logged in|\/login/i.test(t)) return ["Claude Code isn't signed in on this Mac. Open Terminal, type claude, then /login, and try again.", "bad"];
+  if (/blocked access to Photos|Not authorized|-1743/i.test(t)) return ["macOS blocked access to Photos. Open System Settings > Privacy & Security > Automation and turn on Photos for Photo Scrapbook, then try again.", "bad"];
+  if (/didn't let Terminal read your photo library|NOACCESS/i.test(t)) return ["macOS blocked access to your photo library. Open System Settings > Privacy & Security > Photos and allow Photo Scrapbook, then try again.", "bad"];
+  if (/Sort the library first/i.test(t)) return ["Sort your photos first (step 1), then make the scrapbook.", "warn"];
+  return null;
+}
+
+function render(s) {
+  S = s; const L = s.library, B = s.book, H = s.share, J = s.job;
+  $("summary").innerHTML = L.items
+    ? `${fmt(L.items)} photos and videos sorted${L.trips ? `, ${L.trips} ${L.trips === 1 ? "trip" : "trips"}` : ""}. <span>${B.chapters ? `Your scrapbook has ${B.chapters} chapters.` : "Next: make your scrapbook."}</span>`
+    : `Your photos, sorted and made into a scrapbook. <span>Start by sorting your iCloud photos.</span>`;
+  $("sortInfo").textContent = L.sorted_at ? `Last sorted ${ago(L.sorted_at)}. Sorting again only looks at photos added since.` : "Sorts your iCloud Photos into albums and trips. The first time takes a few hours.";
+  $("bookInfo").textContent = B.chapters ? `${B.chapters} chapters, ${fmt(B.photos)} photos${B.videos ? ` and ${B.videos} clips` : ""}. Made ${ago(B.built_at)}.` : "Claude picks the best photos and clips for each trip and year.";
+  $("buildBtn").textContent = B.chapters ? "Update scrapbook" : "Make scrapbook";
+  $("openBook").disabled = !B.chapters;
+  $("shareInfo").innerHTML = H.url ? `<span class="url">${H.url}</span><br>Private: only people you add from the page's Share menu can open it.` : "Publishes it to a private link on your Claude account, for family to open on their phones.";
+  $("pubBtn").textContent = H.url ? "Update link" : "Publish";
+  $("pubBtn").disabled = !B.chapters;
+  $("qrBox").hidden = !H.qr; $("qr").innerHTML = H.qr || "";
+  $("openLink").hidden = $("copyLink").hidden = !H.url;
+  ["sortBtn", "buildBtn", "pubBtn"].forEach(id => { if (J.running) $(id).disabled = true; });
+  if (!J.running) { $("sortBtn").disabled = false; $("buildBtn").disabled = false; }
+  // job panel
+  if (J.task) {
+    $("jobPanel").hidden = false; $("jobName").textContent = J.running ? J.name + "…" : J.name;
+    const secs = Math.round(((J.running ? J.now : J.ended) - J.started) || 0);
+    $("jobTime").textContent = `${Math.floor(secs / 60)}m ${secs % 60}s`;
+    $("stopBtn").hidden = !J.running;
+    const pct = J.total ? Math.round(J.done / J.total * 100) : 0;
+    $("bar").className = "bar" + (J.running && !J.total ? " wait" : ""); $("bar").firstElementChild.style.width = (J.running ? pct : 100) + "%";
+    $("log").textContent = J.log.slice(-10).join("\n");
+    const ex = explain(J.log);
+    if (J.running) $("jobMsg").hidden = true;
+    else if (J.code === 0) showMsg(ex && ex[1] === "warn" ? ex[0] : { sort: "Sorted. New photos are in their albums in Photos.", build: "Your scrapbook is ready. Open it to look through, or publish it.", publish: "Published. The link and QR code are under Share." }[J.task] || "Done.", ex && ex[1] === "warn" ? "warn" : "ok");
+    else showMsg(ex ? ex[0] : "It stopped with an error. The last lines are below; finished work is kept, so you can run it again.", ex ? ex[1] : "bad");
+  }
+  if (!$("title").matches(":focus")) $("title").value = s.settings.title;
+  document.querySelectorAll("#look button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === s.settings.look));
+  $("light").checked = !!s.settings.light;
+  clearTimeout(timer); timer = setTimeout(poll, J.running ? 1000 : 4000);
+}
+async function poll() { try { render(await api("/api/state")); } catch (e) { clearTimeout(timer); timer = setTimeout(poll, 4000); } }
+
+const run = task => api("/api/run", {task}).then(render).catch(() => {});
+$("sortBtn").onclick = () => run("sort");
+$("buildBtn").onclick = () => run("build");
+$("pubBtn").onclick = () => run("publish");
+$("stopBtn").onclick = () => api("/api/stop", {}).then(render).catch(() => {});
+$("openBook").onclick = () => { $("openBook").textContent = "Opening…"; api("/api/open", {what: "book"}).then(render).catch(() => {}).finally(() => $("openBook").textContent = "Open and edit"); };
+$("dashBtn").onclick = () => api("/api/open", {what: "dashboard"}).catch(() => {});
+$("openPhotos").onclick = () => api("/api/open", {what: "photos"}).catch(() => {});
+$("openLink").onclick = () => api("/api/open", {what: "link"}).catch(() => {});
+$("copyLink").onclick = async () => { try { await navigator.clipboard.writeText(S.share.url); $("copyLink").textContent = "Copied"; } catch (e) { $("copyLink").textContent = "Select the link above"; } setTimeout(() => $("copyLink").textContent = "Copy link", 1600); };
+const saveSettings = body => api("/api/settings", body).then(s => { render(s); $("saved").textContent = "Saved"; setTimeout(() => $("saved").textContent = "", 1400); }).catch(() => {});
+$("title").addEventListener("change", e => saveSettings({title: e.target.value}));
+$("look").onclick = e => { const b = e.target.closest("button"); if (b) saveSettings({look: b.dataset.v}); };
+$("light").onchange = e => saveSettings({light: e.target.checked});
+poll();
+</script>
+</body></html>

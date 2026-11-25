@@ -11,6 +11,10 @@ Point Claude at your camera roll. It looks at every photo and video, sorts them 
 - **Never touches your originals.** It only reads them and makes sorted copies. On a Mac the copies take no extra space.
 - **Runs on your computer.** Your photos are not uploaded anywhere.
 
+## The Mac app
+
+Run `./make_app.sh` once. It puts **Photo Scrapbook** in your Applications folder (the one in your home folder): double-click it for one window with three steps, **Sort new photos**, **Scrapbook** (make it, open it, remove photos and get replacements) and **Share** (publish a private link, with a QR code to open it on your phone and add it to the home screen). Settings: the scrapbook's name, the photo finish, and using less of your Claude plan.
+
 ## Start here (no coding needed)
 
 You need a Mac and a Claude plan. Windows and Linux work too, with a few less conveniences.

@@ -1,0 +1,221 @@
+<meta charset="utf-8">
+<title>Our Scrapbook</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@300;400;500&display=swap">
+<style>
+/* LAYOUT: a quiet gallery. Each chapter opens on one full-bleed photograph, then an offset intro, then places
+   as numbered sections whose photos run in a slow rhythm: wide single, matched-height pair, offset single.
+   Small spaced capitals for places, dates and counts; white space does the rest.
+   Made by scripts/scrapbook.py (claude-photo-sorter); data in data.json, photos in images/. */
+:root{
+  --bg:#fbfbfa; --bg2:#f0f0ee; --fg:#141414; --fg2:#6f6f6b; --rule:#dcdcd8; --scrim:rgba(251,251,250,.97);
+  --sans:"Hanken Grotesk","Helvetica Neue",Arial,system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f0f0f; --bg2:#1a1a1a; --fg:#ededea; --fg2:#8f8f8a; --rule:#2a2a28; --scrim:rgba(15,15,15,.97); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f0f0f; --bg2:#1a1a1a; --fg:#ededea; --fg2:#8f8f8a; --rule:#2a2a28; --scrim:rgba(15,15,15,.97); color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--fg);font:300 17px/1.6 var(--sans);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}
+@media (max-width:600px){.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+:focus-visible{outline:1px solid var(--fg);outline-offset:4px}
+.cap{font:400 11.5px/1.4 var(--sans);letter-spacing:.16em;text-transform:uppercase;color:var(--fg2)}
+.cap b{font-weight:500;color:var(--fg)}
+img{display:block;width:100%;height:auto;background:var(--bg2)}
+
+/* top bar */
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg)}
+.bar .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:56px}
+.bar a:hover{color:var(--fg)}
+.bar .cap{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+/* contents */
+.intro-book{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;padding-block:72px 64px;align-items:end}
+.intro-book h1{font:300 clamp(44px,8vw,112px)/.95 var(--sans);letter-spacing:-.03em;margin:16px 0 0;text-wrap:balance}
+.intro-book p{margin:0;color:var(--fg2);max-width:36ch;justify-self:end}
+@media (max-width:760px){.intro-book{grid-template-columns:minmax(0,1fr);gap:24px;padding-block:48px 40px}.intro-book p{justify-self:start}}
+.shelf{padding-block:8px 72px}
+.shelf>.cap{display:block;padding-bottom:16px;border-bottom:1px solid var(--rule)}
+.entry{display:grid;grid-template-columns:56px minmax(0,1.1fr) minmax(0,1fr) minmax(120px,300px);gap:24px;align-items:center;padding-block:20px;border-bottom:1px solid var(--rule)}
+.entry .n{font:400 13px/1 var(--sans);color:var(--fg2)}
+.entry h2{font:300 clamp(26px,3vw,40px)/1.1 var(--sans);letter-spacing:-.015em;margin:0}
+.entry img{aspect-ratio:3/2;object-fit:cover;transition:opacity .3s ease}
+.entry:hover img{opacity:.85}
+.entry:hover h2{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:6px}
+@media (max-width:760px){.entry{grid-template-columns:40px minmax(0,1fr);gap:8px 16px}.entry>.cap{grid-column:2}.entry img{grid-column:1/-1;order:-1;margin-bottom:8px}}
+
+/* chapter */
+.hero{width:100%}
+.hero img{height:min(76vh,860px);object-fit:cover}
+@media (max-width:760px){.hero img{height:auto;aspect-ratio:4/5}}
+.ch-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:48px;padding-block:56px 40px}
+.ch-head h1{font:300 clamp(44px,7vw,96px)/.95 var(--sans);letter-spacing:-.03em;margin:16px 0 0;text-wrap:balance}
+.ch-head .side{align-self:end;display:flex;flex-direction:column;gap:24px;max-width:40ch}
+.ch-head .side p{margin:0;font-size:19px;line-height:1.55}
+.ch-head dl{display:grid;grid-template-columns:auto 1fr;gap:8px 24px;margin:0}
+.ch-head dd{margin:0;font:400 13px/1.4 var(--sans);letter-spacing:.04em}
+@media (max-width:760px){.ch-head{grid-template-columns:minmax(0,1fr);gap:24px;padding-block:32px 24px}}
+.highlights{padding-block:8px 32px}
+.highlights>.cap{display:block;padding-bottom:16px;border-bottom:1px solid var(--rule);margin-bottom:24px}
+.hl{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,300px));gap:32px 24px}@media (max-width:600px){.hl{grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}.hl b{font-size:20px}}
+.hl button{display:flex;flex-direction:column;gap:12px;text-align:left}
+.hl img{aspect-ratio:4/5;object-fit:cover;transition:opacity .3s ease}
+.hl button:hover img{opacity:.88}
+.hl b{font:300 26px/1.1 var(--sans);letter-spacing:-.01em}
+.hl b .cap{margin-right:12px;vertical-align:4px}
+.hl span.line{font-size:15px;color:var(--fg2);max-width:32ch}
+.blurb{font-size:19px;line-height:1.5;max-width:44ch;margin:-16px 0 40px}
+section.place{padding-block:48px 24px;scroll-margin-top:72px}
+section.place>header{display:flex;align-items:baseline;gap:16px;padding-bottom:16px;border-bottom:1px solid var(--rule);margin-bottom:40px;flex-wrap:wrap}
+section.place>header h2{font:300 clamp(24px,2.6vw,34px)/1.1 var(--sans);letter-spacing:-.01em;margin:0}
+section.place>header .cap:last-child{margin-left:auto}
+.rows{display:flex;flex-direction:column;gap:clamp(40px,7vw,104px)}
+.row{display:flex;gap:clamp(16px,2.4vw,32px);align-items:flex-start}
+.row>figure{margin:0;min-width:0}
+.row.one>figure{width:100%}
+.row.right{justify-content:flex-end}
+.row.right>figure{width:min(100%,68%)}
+.row.left>figure{width:min(100%,56%)}
+.row.tall>figure{width:min(100%,44%)}
+.row.tall.right>figure{margin-right:8%}
+.row.tall.left>figure{margin-left:8%}
+figcaption{display:flex;justify-content:space-between;gap:16px;padding-top:12px}
+figcaption span{font-size:15px;color:var(--fg)}
+figure button{display:block;width:100%}
+figure button img{transition:opacity .3s ease}
+figure button:hover img{opacity:.88}
+@media (max-width:600px){.row{flex-direction:column}.row>figure{width:100%!important;margin:0!important;flex:none!important}}
+nav.turn{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding-block:56px 96px;margin-top:72px;border-top:1px solid var(--rule)}
+nav.turn a{display:flex;flex-direction:column;gap:8px}
+nav.turn a b{font:300 clamp(24px,3vw,36px)/1.1 var(--sans);letter-spacing:-.015em}
+nav.turn a.next{text-align:right;grid-column:2}
+nav.turn a:hover b{text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:6px}
+.empty{padding-block:120px;max-width:44ch}
+.empty h1{font:300 56px/1 var(--sans);letter-spacing:-.03em;margin:16px 0}
+.empty p{color:var(--fg2)}
+footer.made{padding-block:0 64px}
+@media (prefers-reduced-motion:no-preference){main{animation:in .6s ease both}@keyframes in{from{opacity:.0001}to{opacity:1}}}
+
+/* full-size view */
+.lb{position:fixed;inset:0;z-index:20;background:var(--scrim);display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:16px;padding:calc(16px + env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px))}
+.lb .top{display:flex;justify-content:space-between;align-items:center;gap:16px;min-height:40px}
+.lb img{max-width:100%;max-height:100%;width:auto;height:auto;margin:auto;object-fit:contain;min-height:0;background:transparent}
+.lb .foot{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+.lb .foot span{font-size:16px}
+.lb button.cap:hover,.lb button.cap:focus-visible{color:var(--fg)}
+.lb button:disabled{opacity:.3;cursor:default}
+</style>
+
+<div class="bar" id="bar" hidden><div class="wrap"><a class="cap" href="#" id="toContents">← Contents</a><span class="cap" id="barTitle"></span></div></div>
+<main id="app"><div class="wrap empty"><span class="cap">Opening</span><h1>Our Scrapbook</h1><p>Loading the photos…</p></div></main>
+<div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Photo">
+  <div class="top"><span class="cap" id="lbCount"></span><button class="cap" id="lbClose">Close</button></div>
+  <img id="lbImg" alt="">
+  <div class="foot"><span id="lbCap"></span><span class="cap"><button class="cap" id="lbPrev">← Previous</button>&nbsp;&nbsp;&nbsp;<button class="cap" id="lbNext">Next →</button></span></div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const two = n => String(n).padStart(2, "0");
+let B = null, lbList = [], lbAt = 0, lastFocus = null;
+
+function contents() {
+  $("bar").hidden = true;
+  document.title = B.title || "Our Scrapbook";
+  let n = 0;
+  const shelf = (label, kind) => {
+    const cs = B.chapters.filter(c => c.kind === kind);
+    if (!cs.length) return "";
+    return `<section class="shelf"><span class="cap">${label}</span>${cs.map(c => {
+      const k = c.pages.reduce((s, p) => s + p.photos.length, 0);
+      return `<a class="entry" href="#c-${esc(c.id)}"><span class="n">${two(++n)}</span><h2>${esc(c.title)}</h2><span class="cap">${esc(c.dates || c.when)}${c.places && c.places.length > 1 ? " · " + c.places.length + " places" : ""} · ${k} photos</span><img src="${esc(c.cover)}" alt="" loading="lazy"></a>`;
+    }).join("")}</section>`;
+  };
+  $("app").innerHTML = `<div class="wrap"><header class="intro-book"><div><span class="cap">${esc(B.span || "")}</span><h1>${esc(B.title || "Our Scrapbook")}</h1></div>${B.subtitle ? `<p>${esc(B.subtitle)}</p>` : ""}</header>`
+    + shelf("Trips", "trip") + shelf("At home", "year")
+    + `<footer class="made cap">${esc(B.note || "")}</footer></div>`;
+}
+
+/* a slow rhythm: wide single, matched-height pair, offset single (portraits get a narrower single) */
+function rows(photos, start) {
+  const out = []; let i = 0, step = 0;
+  const fig = (p, k, flex) => `<figure${flex ? ` style="flex:${(p.w / p.h).toFixed(3)} 1 0"` : ""}><button data-k="${start + k}" aria-label="Open ${esc(p.caption || "photo")}"><img src="${esc(p.src)}" alt="${esc(p.caption || "")}" loading="lazy" width="${p.w}" height="${p.h}"></button>${p.caption || p.date ? `<figcaption><span>${esc(p.caption || "")}</span><span class="cap">${esc(p.date || "")}</span></figcaption>` : ""}</figure>`;
+  while (i < photos.length) {
+    const p = photos[i], q = photos[i + 1], tall = p.h > p.w * 1.05, mode = step % 4;
+    if (q && (mode === 1 || mode === 3 || (tall && q.h > q.w))) {
+      out.push(`<div class="row pair">${fig(p, i, 1)}${fig(q, i + 1, 1)}</div>`); i += 2;
+    } else if (tall) {
+      out.push(`<div class="row tall ${step % 2 ? "left" : "right"}">${fig(p, i)}</div>`); i++;
+    } else if (mode === 0) {
+      out.push(`<div class="row one">${fig(p, i)}</div>`); i++;
+    } else {
+      out.push(`<div class="row ${step % 3 ? "right" : "left"}">${fig(p, i)}</div>`); i++;
+    }
+    step++;
+  }
+  return out.join("");
+}
+
+function chapter(id) {
+  const i = B.chapters.findIndex(c => c.id === id);
+  if (i < 0) return contents();
+  const c = B.chapters[i], prev = B.chapters[i - 1], next = B.chapters[i + 1];
+  document.title = `${c.title} · ${B.title || "Our Scrapbook"}`;
+  $("bar").hidden = false; $("barTitle").textContent = `${two(i + 1)} · ${c.title} · ${c.when}`;
+  const all = c.pages.flatMap(p => p.photos), count = all.length;
+  let k = 0;
+  const places = c.pages.map((p, j) => { const s = k; k += p.photos.length;
+    return `<section class="place wrap" id="place-${j}"><header><span class="cap">${two(j + 1)}</span><h2>${esc(p.heading)}</h2><span class="cap">${esc(p.sub || "")}</span></header>${p.blurb ? `<p class="blurb">${esc(p.blurb)}</p>` : ""}<div class="rows">${rows(p.photos, s)}</div></section>`; }).join("");
+  /* a trip across several places opens with one standout photo per place */
+  const hl = c.kind === "trip" && c.pages.length > 1 ? `<div class="wrap highlights"><span class="cap">Highlights · ${c.pages.length} places</span><div class="hl">${c.pages.map((p, j) => { const ph = p.photos[p.lead || 0];
+    return `<button data-place="${j}"><img src="${esc(ph.src)}" alt="" loading="lazy"><b><span class="cap">${two(j + 1)}</span>${esc(p.heading)}</b>${p.blurb ? `<span class="line">${esc(p.blurb)}</span>` : `<span class="line cap">${esc(p.sub || "")}</span>`}</button>`; }).join("")}</div></div>` : "";
+  $("app").innerHTML = `<div class="hero"><img src="${esc(c.cover)}" alt=""></div>`
+    + `<div class="wrap"><header class="ch-head"><div><span class="cap">Chapter ${two(i + 1)}</span><h1>${esc(c.title)}</h1></div><div class="side">${c.intro ? `<p>${esc(c.intro)}</p>` : ""}<dl class="cap"><dt>When</dt><dd>${esc(c.dates || c.when)}</dd>${c.places && c.places.length > 1 ? `<dt>Places</dt><dd>${c.places.map(esc).join(" · ")}</dd>` : ""}<dt>Photos</dt><dd>${count}</dd></dl></div></header></div>`
+    + hl + places
+    + `<div class="wrap"><nav class="turn" aria-label="Chapters">${prev ? `<a href="#c-${esc(prev.id)}"><span class="cap">← Previous</span><b>${esc(prev.title)}</b></a>` : ""}${next ? `<a class="next" href="#c-${esc(next.id)}"><span class="cap">Next →</span><b>${esc(next.title)}</b></a>` : `<a class="next" href="#"><span class="cap">Back to</span><b>Contents</b></a>`}</nav></div>`;
+  $("app").querySelectorAll("figure button").forEach(b => b.onclick = () => openLb(all, +b.dataset.k));
+  $("app").querySelectorAll(".hl button").forEach(b => b.onclick = () => $("place-" + b.dataset.place).scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"}));
+}
+
+function openLb(list, at) { lbList = list; lbAt = at; lastFocus = document.activeElement; $("lb").hidden = false; showLb(); $("lbClose").focus(); }
+function showLb() {
+  const p = lbList[lbAt];
+  $("lbImg").src = p.src; $("lbImg").alt = p.caption || "";
+  $("lbCap").textContent = p.caption || ""; $("lbCount").textContent = `${two(lbAt + 1)} / ${two(lbList.length)}${p.date ? " · " + p.date : ""}`;
+  $("lbPrev").disabled = lbAt === 0; $("lbNext").disabled = lbAt === lbList.length - 1;
+}
+function closeLb() { $("lb").hidden = true; lastFocus && lastFocus.focus && lastFocus.focus(); }
+$("lbPrev").onclick = () => { if (lbAt > 0) { lbAt--; showLb(); } };
+$("lbNext").onclick = () => { if (lbAt < lbList.length - 1) { lbAt++; showLb(); } };
+$("lbClose").onclick = closeLb;
+$("lb").addEventListener("click", e => { if (e.target === $("lb")) closeLb(); });
+document.addEventListener("keydown", e => {
+  if ($("lb").hidden) return;
+  if (e.key === "Escape") closeLb();
+  if (e.key === "ArrowLeft") $("lbPrev").click();
+  if (e.key === "ArrowRight") $("lbNext").click();
+});
+
+function route() {
+  if (!B) return;
+  $("lb").hidden = true;
+  const h = location.hash.slice(1);
+  if (h.startsWith("c-")) chapter(h.slice(2)); else contents();
+  scrollTo(0, 0);
+}
+addEventListener("hashchange", route);
+$("toContents").onclick = e => { e.preventDefault(); location.hash = ""; route(); };
+
+fetch("data.json", {cache: "no-cache"}).then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => { B = d; route(); }).catch(() => {
+  $("app").innerHTML = `<div class="wrap empty"><span class="cap">Nothing here yet</span><h1>Our Scrapbook</h1><p>The photos for this scrapbook haven't been added yet. On the Mac, run scripts/scrapbook.py, then publish the folder it makes.</p></div>`;
+});
+})();
+</script>

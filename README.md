@@ -60,6 +60,10 @@ caffeinate -i .venv/bin/python scripts/icloud_albums.py               # everythi
 
 You get, under **Albums > Photo sorter**: an album per folder for everyday photos, **Trips** (found from date and location, named by Claude, with an album per place when a trip covers several), **Review - duplicates** and **Review - maybe delete** (blurry, dark and accidental shots). Nothing is ever deleted by the tool. `./start.sh` shows it all on the dashboard; there you can tick photos and **Send to Photos to delete**, which puts them in a **To delete** album; in Photos, open it, press ⌘A then ⌘Delete (they stay in Recently Deleted for 30 days). Items that are only in iCloud are downloaded with Apple's PhotoKit (compiled once from `scripts/photokit_export.swift`; needs `xcode-select --install`, and macOS asks to let Terminal access Photos). Options: `--home LAT,LON`, `--away-km 100`, `--no-trips`, `--no-review`, `--redo`, `--max N`.
 
+### Turn it into a scrapbook
+
+`.venv/bin/python scripts/scrapbook.py --preview` makes a photo scrapbook from the sorted library: a chapter per trip (a page per place) and a chapter per year at home, with the best photos picked and captioned by Claude. Only those photos are copied, at web size and without location data. Ask Claude Code to "publish my scrapbook" to get a private link you can share with family.
+
 ## The dashboard
 
 | | |

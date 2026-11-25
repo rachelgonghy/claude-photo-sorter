@@ -62,3 +62,14 @@ The open dashboard refreshes itself when these run.
 - A batch failed: press Start sorting again. Finished batches are kept.
 - HEIC photos fail to open: `.venv/bin/pip install -U pillow-heif`.
 - Jev 401: the key in `.env` is wrong. Jev 400 "Invalid image dimensions": leave `JEV_MODEL` unset.
+
+## The scrapbook (iCloud Photos, Mac)
+
+`scripts/scrapbook.py` turns a sorted iCloud library (run `scripts/icloud_albums.py` first) into a private photo scrapbook: one chapter per trip (a page per place) and one "at home" chapter per year (a page per month). Claude picks the best photos per page and writes short captions and chapter intros; only the picked photos are fetched, resized to 1600px and saved without metadata (no GPS) into `work/scrapbook/site/` (`index.html`, `data.json`, `images/`). Re-runs reuse earlier picks and photos.
+
+| Step | Command |
+|---|---|
+| Build | `.venv/bin/python scripts/scrapbook.py` (`--title "..."` to name it) |
+| Look at it on this Mac | `.venv/bin/python scripts/scrapbook.py --preview` |
+
+**When they ask to publish or share the scrapbook:** publish `work/scrapbook/site/index.html` with the Artifact tool, with `files` mapping `data.json` and every `images/<name>.jpg` to its file in `work/scrapbook/site/`, icon `photo`. One publish takes at most 255 files: publish the page with `data.json` and the first images, then publish again to the same `url` with the rest. Save the URL in `work/scrapbook/url.txt` and update that same artifact on later runs, passing `null` for images no longer in the folder. It stays private: tell them to share it from the page's Share menu with the family members they choose. These are family photos: never commit `work/scrapbook/`, never put them in this repository (the GitHub copy is public) or on any other site.

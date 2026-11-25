@@ -4,6 +4,10 @@
   .venv/bin/python scripts/scrapbook.py --preview    # build, then open it in the browser
   .venv/bin/python scripts/scrapbook.py --title "The Tan family scrapbook"
   .venv/bin/python scripts/scrapbook.py --look rich      # finish: natural (default), rich or none
+  .venv/bin/python scripts/scrapbook.py --restore        # put back everything removed by hand
+
+In the preview (--preview), open a photo or clip and press "Remove from scrapbook": it is taken out (never
+from Photos) and Claude picks a replacement from the same place or month, which appears in its place.
 
 Chapters: one per trip (a page per place), plus one "at home" chapter per year (a page per month).
 Claude picks the best photos for each page from the previews (sharp, well composed, people, the
@@ -46,6 +50,7 @@ RAW = os.path.join(OUT, "raw")              # web-size copies before the finish,
 SHEETS = os.path.join(OUT, "sheets")
 PICKS = os.path.join(OUT, "picks.json")     # cache: page key -> {id: caption}
 INTROS = os.path.join(OUT, "intros.json")   # cache: chapter id -> intro
+REMOVED = os.path.join(OUT, "removed.json") # ids taken out of the book by hand; Claude picks replacements
 LEAVE_OUT = {"docs", "memes", "screenshots", "vscreen"}  # never in a scrapbook (vscreen: screen recordings)
 MAX_PHOTOS = 450                             # a published page holds about 500 files
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
@@ -329,7 +334,11 @@ def main():
     ap.add_argument("--title", default="Our Scrapbook")
     ap.add_argument("--preview", action="store_true", help="open the finished scrapbook in the browser")
     ap.add_argument("--look", choices=list(LOOKS), default="natural", help="photo finish (default natural)")
+    ap.add_argument("--restore", action="store_true", help="put back the photos and clips removed by hand")
     args = ap.parse_args()
+    if args.restore and os.path.exists(REMOVED):
+        os.remove(REMOVED)
+        print("Everything removed by hand is back in the running.", flush=True)
     if sys.platform != "darwin":
         sys.exit("This needs the Photos app, so it only runs on a Mac.")
 
@@ -423,91 +432,164 @@ def main():
         print(f"  {waiting} pages got no answer from Claude (usage limit or not signed in); run again later "
               "to add them.", flush=True)
 
-    all_ids = [i for pages in chosen.values() for pg in pages.values() for i in pg]
-    all_vids = [i for pages in vchosen.values() for pg in pages.values() for i in pg]
-    fetch(all_ids, byid)
-    fetch_videos(all_vids, byid)
-    finish_all(all_ids + all_vids, args.look)
-    have = lambda i: os.path.exists(os.path.join(IMAGES, f"{i}.jpg"))
-    have_v = lambda i: have(i) and os.path.exists(os.path.join(VIDEOS, f"{i}.mp4"))
+    what_of = lambda ch, heading: (f"{'a trip to ' + ch['title'] if ch['kind'] == 'trip' else 'everyday life at home in ' + ch['when']}"
+                                   f", {heading}")
 
-    for key, ch in order:
-        pages = []
-        for heading, ids in ch["pages"].items():
-            caps = dict(chosen.get(key, {}).get(heading, {}))
-            vsel = vchosen.get(key, {}).get(heading, {})
-            caps.update(vsel)
-            got = sorted([i for i in chosen.get(key, {}).get(heading, {}) if have(i)]
-                         + [i for i in vsel if have_v(i)], key=lambda i: when[i])
-            if not got:
+    def top_up():
+        """Photos and clips removed by hand leave the book; Claude picks the best of the rest of that page."""
+        removed = set(load(REMOVED, []))
+        for sel, field, video in ((chosen, "pages", False), (vchosen, "vpages", True)):
+            for key, pages in sel.items():
+                ch = chapters.get(key)
+                if not ch:
+                    continue
+                for heading, picks in pages.items():
+                    out = [i for i in picks if i in removed]
+                    if not out:
+                        continue
+                    for i in out:
+                        del picks[i]
+                    pool = [i for i in sorted(ch[field].get(heading, []), key=lambda i: when[i])
+                            if i not in picks and i not in removed][:90]
+                    if not pool:
+                        continue
+                    tags = {i: f"VIDEO {float(byid[i].get('duration') or 0):.0f}s" for i in pool} if video else None
+                    res = pick(f"{key}|{heading}|swap" + ("|v" if video else ""), pool, min(len(out), len(pool)),
+                               what_of(ch, heading) + (" (replacing ones the family took out)"), tags)
+                    if res:
+                        picks.update(res)
+
+    def assemble():
+        top_up()
+        out_ch = []  # fresh each time: the preview rebuilds after every removal
+        all_ids = [i for pages in chosen.values() for pg in pages.values() for i in pg]
+        all_vids = [i for pages in vchosen.values() for pg in pages.values() for i in pg]
+        fetch(all_ids, byid)
+        fetch_videos(all_vids, byid)
+        finish_all(all_ids + all_vids, args.look)
+        have = lambda i: os.path.exists(os.path.join(IMAGES, f"{i}.jpg"))
+        have_v = lambda i: have(i) and os.path.exists(os.path.join(VIDEOS, f"{i}.mp4"))
+
+        for key, ch in order:
+            pages = []
+            for heading, ids in ch["pages"].items():
+                caps = dict(chosen.get(key, {}).get(heading, {}))
+                vsel = vchosen.get(key, {}).get(heading, {})
+                caps.update(vsel)
+                got = sorted([i for i in chosen.get(key, {}).get(heading, {}) if have(i)]
+                             + [i for i in vsel if have_v(i)], key=lambda i: when[i])
+                if not got:
+                    continue
+                photos = []
+                for i in got:
+                    with Image.open(os.path.join(IMAGES, f"{i}.jpg")) as im:
+                        w, h = im.size
+                    item = {"src": f"images/{i}.jpg", "w": w, "h": h, "caption": caps.get(i, ""),
+                            "date": f"{dt(when[i]).day} {dt(when[i]):%b}"}
+                    if i in vsel:
+                        item.update(type="video", src=f"videos/{i}.mp4", poster=f"images/{i}.jpg")
+                    photos.append(item)
+                pts = [when[i] for i in got]
+                sub = span(pts) if ch["kind"] == "trip" else f"{len(got)} photos" + (" and videos" if any(i in vsel for i in got) else "")
+                pages.append({"heading": heading, "sub": sub, "photos": photos, "first": min(pts)})
+            if not pages:
                 continue
-            photos = []
-            for i in got:
-                with Image.open(os.path.join(IMAGES, f"{i}.jpg")) as im:
-                    w, h = im.size
-                item = {"src": f"images/{i}.jpg", "w": w, "h": h, "caption": caps.get(i, ""),
-                        "date": f"{dt(when[i]).day} {dt(when[i]):%b}"}
-                if i in vsel:
-                    item.update(type="video", src=f"videos/{i}.mp4", poster=f"images/{i}.jpg")
-                photos.append(item)
-            pts = [when[i] for i in got]
-            sub = span(pts) if ch["kind"] == "trip" else f"{len(got)} photos" + (" and videos" if any(i in vsel for i in got) else "")
-            pages.append({"heading": heading, "sub": sub, "photos": photos, "first": min(pts)})
-        if not pages:
-            continue
-        pages.sort(key=lambda p: p["first"])
-        for p in pages:
-            del p["first"]
-        ts = [when[i] for ids in ch["pages"].values() for i in ids]
-        flat = [p for pg in pages for p in pg["photos"] if p.get("type") != "video"] or [p for pg in pages for p in pg["photos"]]
-        best = max(flat, key=lambda p: (p["w"] >= p["h"], bool(p["caption"])))
-        cover = best.get("poster", best["src"])
-        c = {"id": slug(ch["title"] + "-" + ch["when"]), "kind": ch["kind"], "title": ch["title"], "when": ch["when"],
-             "dates": span(ts) if ch["kind"] == "trip" else ch["when"], "places": [p["heading"] for p in pages] if ch["kind"] == "trip" else [],
-             "cover": cover, "pages": pages}
-        words = intro(c)
-        c["intro"] = words.get("intro", "")
-        for pg in pages:  # the place's line, and its standout photo for the chapter's highlights
-            pg["blurb"] = words.get(pg["heading"], "")
-            pg["lead"] = max(range(len(pg["photos"])), key=lambda j: (pg["photos"][j].get("type") != "video", pg["photos"][j]["w"] >= pg["photos"][j]["h"], bool(pg["photos"][j]["caption"]), -j))
-        out_ch.append(c)
+            pages.sort(key=lambda p: p["first"])
+            for p in pages:
+                del p["first"]
+            ts = [when[i] for ids in ch["pages"].values() for i in ids]
+            flat = [p for pg in pages for p in pg["photos"] if p.get("type") != "video"] or [p for pg in pages for p in pg["photos"]]
+            best = max(flat, key=lambda p: (p["w"] >= p["h"], bool(p["caption"])))
+            cover = best.get("poster", best["src"])
+            c = {"id": slug(ch["title"] + "-" + ch["when"]), "kind": ch["kind"], "title": ch["title"], "when": ch["when"],
+                 "dates": span(ts) if ch["kind"] == "trip" else ch["when"], "places": [p["heading"] for p in pages] if ch["kind"] == "trip" else [],
+                 "cover": cover, "pages": pages}
+            words = intro(c)
+            c["intro"] = words.get("intro", "")
+            for pg in pages:  # the place's line, and its standout photo for the chapter's highlights
+                pg["blurb"] = words.get(pg["heading"], "")
+                pg["lead"] = max(range(len(pg["photos"])), key=lambda j: (pg["photos"][j].get("type") != "video", pg["photos"][j]["w"] >= pg["photos"][j]["h"], bool(pg["photos"][j]["caption"]), -j))
+            out_ch.append(c)
 
-    years = sorted({dt(when[i]).year for i in ok})
-    nt, ny = sum(c["kind"] == "trip" for c in out_ch), sum(c["kind"] == "year" for c in out_ch)
-    words = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
-    num = lambda n: words[n] if n < len(words) else str(n)
-    book = {"title": args.title, "span": f"{years[0]}–{years[-1]}" if len(years) > 1 else str(years[0]) if years else "",
-            "subtitle": "The trips we took and the days in between" if nt else "The days that make a year",
-            "lead": f"{num(nt)} {'trip' if nt == 1 else 'trips'}, {num(ny).lower()} {'year' if ny == 1 else 'years'} at home,",
-            "rest": f"chosen from {len(ok):,} of our photos and kept in one place.",
-            "cover": next((c["cover"] for c in out_ch if c["kind"] == "trip"), out_ch[0]["cover"] if out_ch else ""),
-            "note": f"Made {datetime.now():%d %b %Y} from our iCloud Photos.", "chapters": out_ch}
-    save(os.path.join(SITE, "data.json"), book)
-    shutil.copy(os.path.join(HERE, "scrapbook_page.html"), os.path.join(SITE, "index.html"))
-    items = [p for c in out_ch for pg in c["pages"] for p in pg["photos"]]
-    used = {os.path.basename(p.get("poster", p["src"])) for p in items}
-    usedv = {os.path.basename(p["src"]) for p in items if p.get("type") == "video"}
-    for folder, keep in ((IMAGES, used), (VIDEOS, usedv)):  # dropped from the book since the last run
-        for f in os.listdir(folder) if os.path.isdir(folder) else []:
-            if f not in keep:
-                os.remove(os.path.join(folder, f))
-    mb = (sum(os.path.getsize(os.path.join(IMAGES, f)) for f in used)
-          + sum(os.path.getsize(os.path.join(VIDEOS, f)) for f in usedv)) / 1e6
-    print(f"Scrapbook ready: {len(out_ch)} chapters, {len(used) - len(usedv)} photos and {len(usedv)} video clips "
-          f"({mb:.0f} MB) in {os.path.relpath(SITE)}")
-    print("To share it: open Claude Code in this folder and ask it to \"publish my scrapbook\".")
+        years = sorted({dt(when[i]).year for i in ok})
+        nt, ny = sum(c["kind"] == "trip" for c in out_ch), sum(c["kind"] == "year" for c in out_ch)
+        words = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"]
+        num = lambda n: words[n] if n < len(words) else str(n)
+        book = {"title": args.title, "span": f"{years[0]}–{years[-1]}" if len(years) > 1 else str(years[0]) if years else "",
+                "subtitle": "The trips we took and the days in between" if nt else "The days that make a year",
+                "lead": f"{num(nt)} {'trip' if nt == 1 else 'trips'}, {num(ny).lower()} {'year' if ny == 1 else 'years'} at home,",
+                "rest": f"chosen from {len(ok):,} of our photos and kept in one place.",
+                "cover": next((c["cover"] for c in out_ch if c["kind"] == "trip"), out_ch[0]["cover"] if out_ch else ""),
+                "note": f"Made {datetime.now():%d %b %Y} from our iCloud Photos.", "chapters": out_ch}
+        save(os.path.join(SITE, "data.json"), book)
+        shutil.copy(os.path.join(HERE, "scrapbook_page.html"), os.path.join(SITE, "index.html"))
+        items = [p for c in out_ch for pg in c["pages"] for p in pg["photos"]]
+        used = {os.path.basename(p.get("poster", p["src"])) for p in items}
+        usedv = {os.path.basename(p["src"]) for p in items if p.get("type") == "video"}
+        for folder, keep in ((IMAGES, used), (VIDEOS, usedv)):  # dropped from the book since the last run
+            for f in os.listdir(folder) if os.path.isdir(folder) else []:
+                if f not in keep:
+                    os.remove(os.path.join(folder, f))
+        mb = (sum(os.path.getsize(os.path.join(IMAGES, f)) for f in used)
+              + sum(os.path.getsize(os.path.join(VIDEOS, f)) for f in usedv)) / 1e6
+        print(f"Scrapbook ready: {len(out_ch)} chapters, {len(used) - len(usedv)} photos and {len(usedv)} video clips "
+              f"({mb:.0f} MB) in {os.path.relpath(SITE)}")
+        print("To share it: open Claude Code in this folder and ask it to \"publish my scrapbook\".")
+    assemble()
     if args.preview:
-        port = 8790
-        subprocess.Popen([sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", SITE],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(1)
-        subprocess.run(["open", f"http://127.0.0.1:{port}/"])
-        print(f"Preview at http://127.0.0.1:{port}/ (press Control-C to stop)")
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
+        preview(assemble)
+
+
+def preview(assemble, port=8790):
+    """Serve the book on this Mac only. POST api/remove takes a photo or clip out and fills its place."""
+    import threading
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+    lock = threading.Lock()
+
+    class H(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
             pass
+
+        def send_json(self, obj, code=200):
+            b = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
+
+        def do_GET(self):
+            if self.path.split("?")[0] == "/api/editable":
+                return self.send_json({"ok": True})
+            return super().do_GET()
+
+        def do_POST(self):
+            if self.headers.get("Origin") not in (None, f"http://127.0.0.1:{port}", f"http://localhost:{port}"):
+                return self.send_json({"error": "forbidden"}, 403)
+            if self.path != "/api/remove":
+                return self.send_json({"error": "not found"}, 404)
+            body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0) or 0)) or b"{}")
+            m = re.search(r"(\d+)\.(jpg|mp4)$", str(body.get("src", "")))
+            if not m:
+                return self.send_json({"error": "Which photo?"}, 400)
+            with lock:
+                removed = set(load(REMOVED, []))
+                removed.add(int(m.group(1)))
+                save(REMOVED, sorted(removed))
+                print(f"Removed {m.group(0)}; Claude is choosing a replacement...", flush=True)
+                assemble()
+            return self.send_json({"ok": True})
+
+    srv = ThreadingHTTPServer(("127.0.0.1", port), partial(H, directory=SITE))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    subprocess.run(["open", f"http://127.0.0.1:{port}/"])
+    print(f"Preview at http://127.0.0.1:{port}/ (press Control-C to stop)")
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        srv.shutdown()
 
 
 if __name__ == "__main__":

@@ -71,5 +71,8 @@ The open dashboard refreshes itself when these run.
 |---|---|
 | Build | `.venv/bin/python scripts/scrapbook.py` (`--title "..."` to name it) |
 | Look at it on this Mac | `.venv/bin/python scripts/scrapbook.py --preview` |
+| Put back photos removed by hand | `.venv/bin/python scripts/scrapbook.py --restore` |
+
+In the preview, "Remove from scrapbook" (in the full-size view) takes a photo or clip out of the book, never out of Photos, and Claude picks a replacement from the same place or month. Removals are kept in `work/scrapbook/removed.json`.
 
 **When they ask to publish or share the scrapbook:** publish `work/scrapbook/site/index.html` with the Artifact tool, with `files` mapping `data.json`, every `images/<name>.jpg` and every `videos/<name>.mp4` to its file in `work/scrapbook/site/`, icon `photo`. One publish takes at most 255 files and 64MB: publish the page with `data.json` and the first images, then publish again to the same `url` with the rest of the images and the videos, in batches under 60MB. Save the URL in `work/scrapbook/url.txt` and update that same artifact on later runs, passing `null` for images no longer in the folder. It stays private: tell them to share it from the page's Share menu with the family members they choose. These are family photos: never commit `work/scrapbook/`, never put them in this repository (the GitHub copy is public) or on any other site.

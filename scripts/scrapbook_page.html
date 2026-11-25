@@ -106,7 +106,7 @@ footer.made{padding-block:0 56px;text-align:center}
 <div class="bar" id="bar"><div class="wrap"><a class="name" href="#" id="barName">Our Scrapbook</a><a class="pill" href="#" id="toContents">Contents</a></div></div>
 <main id="app"><div class="wrap empty"><span class="small mute">Opening</span><h1>Our Scrapbook</h1><p>Loading the photos…</p></div></main>
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Photo">
-  <div class="top"><span class="small mute" id="lbCount"></span><div class="ctl"><button id="lbClose">Close</button></div></div>
+  <div class="top"><span class="small mute" id="lbCount"></span><div class="ctl"><button id="lbRemove" hidden>Remove from scrapbook</button><button id="lbClose">Close</button></div></div>
   <img id="lbImg" alt=""><video id="lbVid" controls playsinline hidden></video>
   <div class="foot"><span id="lbCap"></span><div class="ctl"><button id="lbPrev">← Previous</button><button id="lbNext">Next →</button></div></div>
 </div>
@@ -116,7 +116,9 @@ footer.made{padding-block:0 56px;text-align:center}
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const two = n => String(n).padStart(2, "0");
-let B = null, lbList = [], lbAt = 0, lastFocus = null;
+let B = null, lbList = [], lbAt = 0, lastFocus = null, editable = false;
+/* only the preview on the Mac answers api/editable; the shared page has no remove button */
+fetch("api/editable", {cache: "no-store"}).then(r => r.ok ? r.json() : null).then(j => { editable = !!(j && j.ok); }).catch(() => {});
 
 const card = (href, src, title, line, attrs = "") => `<${href ? `a href="${href}"` : "button"} class="card" ${attrs}><img src="${esc(src)}" alt="" loading="lazy"><span class="label"><b>${esc(title)}</b><span class="small">${line}</span></span></${href ? "a" : "button"}>`;
 const chapterLine = c => { const n = c.pages.reduce((s, p) => s + p.photos.length, 0);
@@ -197,7 +199,18 @@ function showLb() {
   else { V.pause(); V.removeAttribute("src"); $("lbImg").src = p.src; $("lbImg").alt = p.caption || ""; }
   $("lbCap").textContent = p.caption || ""; $("lbCount").textContent = `${two(lbAt + 1)} / ${two(lbList.length)}${p.date ? "  ·  " + p.date : ""}`;
   $("lbPrev").disabled = lbAt === 0; $("lbNext").disabled = lbAt === lbList.length - 1;
+  const R = $("lbRemove"); R.hidden = !editable; R.disabled = false; R.textContent = "Remove from scrapbook";
 }
+$("lbRemove").onclick = async () => {
+  const p = lbList[lbAt], R = $("lbRemove");
+  R.disabled = true; R.textContent = "Finding a replacement…";
+  try {
+    const r = await fetch("api/remove", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({src: p.src})});
+    if (!r.ok) throw new Error();
+    B = await fetch("data.json", {cache: "no-cache"}).then(r => r.json());
+    const y = scrollY; closeLb(); route(true); scrollTo(0, y);
+  } catch (e) { R.disabled = false; R.textContent = "Couldn't remove it. Try again"; }
+};
 function closeLb() { $("lbVid").pause(); $("lb").hidden = true; lastFocus && lastFocus.focus && lastFocus.focus(); }
 $("lbPrev").onclick = () => { if (lbAt > 0) { lbAt--; showLb(); } };
 $("lbNext").onclick = () => { if (lbAt < lbList.length - 1) { lbAt++; showLb(); } };
@@ -210,14 +223,14 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowRight") $("lbNext").click();
 });
 
-function route() {
+function route(keep) {
   if (!B) return;
   $("lb").hidden = true;
   const h = location.hash.slice(1);
   if (h.startsWith("c-")) chapter(h.slice(2)); else contents();
-  scrollTo(0, 0);
+  if (keep !== true) scrollTo(0, 0);
 }
-addEventListener("hashchange", route);
+addEventListener("hashchange", () => route());
 ["toContents", "barName"].forEach(id => $(id).onclick = e => { e.preventDefault(); location.hash = ""; route(); });
 
 fetch("data.json", {cache: "no-cache"}).then(r => r.ok ? r.json() : Promise.reject(r.status)).then(d => { B = d; $("barName").textContent = d.title || "Our Scrapbook"; route(); }).catch(() => {

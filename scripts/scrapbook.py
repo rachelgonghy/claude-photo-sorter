@@ -8,6 +8,8 @@
 Chapters: one per trip (a page per place), plus one "at home" chapter per year (a page per month).
 Claude picks the best photos for each page from the previews (sharp, well composed, people, the
 place itself, no near-copies) and writes a short caption for some of them and an intro per chapter.
+Claude also picks a video or two per place; each becomes a short clip (up to 12 seconds, 1280px,
+without metadata) that plays silently in the page and with sound when opened.
 Only the picked photos are fetched from Photos, resized to 1600px and saved WITHOUT their metadata
 (no GPS, no camera details), into work/scrapbook/site/images/, with a gentle editorial finish
 (balanced exposure, a little more colour and warmth, light sharpening). Originals are never changed. Videos, screenshots, documents,
@@ -37,11 +39,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(WORK, "scrapbook")
 SITE = os.path.join(OUT, "site")
 IMAGES = os.path.join(SITE, "images")
+VIDEOS = os.path.join(SITE, "videos")
+MAX_VIDEOS = 24                              # about 3-5 MB each; keeps the page quick and within upload limits
+CLIP = 12                                    # seconds per clip
 RAW = os.path.join(OUT, "raw")              # web-size copies before the finish, so a new --look needs no re-download
 SHEETS = os.path.join(OUT, "sheets")
 PICKS = os.path.join(OUT, "picks.json")     # cache: page key -> {id: caption}
 INTROS = os.path.join(OUT, "intros.json")   # cache: chapter id -> intro
-LEAVE_OUT = {"docs", "memes", "screenshots"}  # never in a scrapbook
+LEAVE_OUT = {"docs", "memes", "screenshots", "vscreen"}  # never in a scrapbook (vscreen: screen recordings)
 MAX_PHOTOS = 450                             # a published page holds about 500 files
 MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December"]
@@ -84,7 +89,7 @@ def slug(s):
 
 # ---------- choosing ----------
 
-def sheet(ids, path):
+def sheet(ids, path, tags=None):
     """A contact sheet of up to 30 previews, each tagged with its id (like sheets.py)."""
     try:
         font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 22)
@@ -96,12 +101,13 @@ def sheet(ids, path):
     for k, i in enumerate(ids):
         x, y = (k % 6) * C, (k // 6) * C
         im.paste(Image.open(os.path.join(THUMBS, f"{i}.jpg")).convert("RGB").resize((C - 8, C - 8)), (x + 4, y + 4))
-        d.rectangle((x + 4, y + 4, x + 14 + 13 * len(str(i)), y + 32), fill="black")
-        d.text((x + 8, y + 6), str(i), fill="yellow", font=font)
+        tag = str(i) + ((" " + tags[i]) if tags and i in tags else "")
+        d.rectangle((x + 4, y + 4, x + 14 + 13 * len(tag), y + 32), fill="black")
+        d.text((x + 8, y + 6), tag, fill="yellow", font=font)
     im.save(path, quality=82)
 
 
-def pick(key, ids, k, what):
+def pick(key, ids, k, what, tags=None):
     """Claude picks the k best of these ids for a page; returns {id: caption}. Cached by key and ids."""
     cache = load(PICKS, {})
     ck = key + ":" + hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()[:10] + f":{k}"
@@ -114,15 +120,29 @@ def pick(key, ids, k, what):
         paths = []
         for s in range(0, len(ids), 30):
             p = os.path.join(SHEETS, f"{hashlib.sha1((ck + str(s)).encode()).hexdigest()[:12]}.jpg")
-            sheet(ids[s:s + 30], p)
+            sheet(ids[s:s + 30], p, tags)
             paths.append(p)
+        video = bool(tags)
+        noun = "videos" if video else "photos"
+        brief = (
+            "These tiles are opening frames of videos (tagged VIDEO with their length). Pick the clips most worth "
+            "watching: real moments and movement (waves, a first swim, kids running, a parade, a view from a "
+            "boat), people looking happy, the place at its best. Skip shaky, dark, accidental, pocket or "
+            "screen-recording clips, and two clips of the same moment." if video else
+            "Choose like the photo editor of a fine travel and family magazine building the story of this place:\n"
+            "- one strong establishing image of the place itself: a wide view, landmark or landscape, ideally in "
+            "beautiful light (golden hour, soft daylight, night lights);\n"
+            "- genuine family moments: candid laughter, faces you can see, eyes open, everyone looking good;\n"
+            "- texture that tells the story: food, details, interiors, street life;\n"
+            "- variety in distance (wide, medium, close), scene and time of day, so the set reads like a story;\n"
+            "- craft: sharp, well exposed, level horizons, clean backgrounds, strong composition.\n"
+            "Never pick two near-identical shots, or blurry, dark, cluttered, unflattering, accidental, receipt, "
+            "document or screenshot images.")
         ans = ia.ask_claude(
-            "You are making a family scrapbook. Use the Read tool to look at each of these contact sheets:\n"
+            "You are curating a family scrapbook. Use the Read tool to look at each of these contact sheets:\n"
             + "\n".join(paths) + "\n\n"
-            f"They show the photos from {what}, each tagged in yellow with an id. Pick the {k} photos that "
-            "belong in a beautiful scrapbook: sharp and well composed, people's faces and happy moments, the "
-            "place itself (views, streets, food that looks good), and a variety of scenes. Never pick two "
-            "near-identical shots, blurry or accidental ones, or screenshots.\n\n"
+            f"They show the {noun} from {what}, each tagged in yellow with an id. Pick the {k} {noun} that belong "
+            f"in a beautiful scrapbook. {brief}\n\n"
             "For about half of your picks, write a caption the way a good travel and family magazine would: "
             "2 to 7 words, warm and evocative, about what is visible (\"Lanterns at dusk\", \"Slow breakfast by "
             "the pool\", \"First swim of the trip\"). Don't invent names, places or events; use an empty caption "
@@ -250,6 +270,58 @@ def fetch(picks, byid):
         print(f"PROGRESS {min(s + 20, len(todo))} {len(todo)}", flush=True)
 
 
+def fetch_videos(vids, byid):
+    """Short web clips in site/videos/<id>.mp4 (no metadata) and their first frames in raw/<id>.jpg."""
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        print("  ffmpeg isn't installed, so videos are left out (brew install ffmpeg, then run again).", flush=True)
+        return
+    os.makedirs(VIDEOS, exist_ok=True)
+    os.makedirs(RAW, exist_ok=True)
+    todo = [i for i in vids if not os.path.exists(os.path.join(VIDEOS, f"{i}.mp4"))]
+    if not todo:
+        return
+    print(f"Making {len(todo)} short video clips...", flush=True)
+    tmp = os.path.join(OUT, "dlv")
+    for n, i in enumerate(todo, 1):
+        shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp)
+        pid = byid[i]["photos_id"]
+        try:
+            ia.osa(EXPORT_JPEG, [tmp, pid])
+        except Exception:
+            pass
+        if not ia.pick_file(tmp):
+            ia.wait_for_files([tmp], 10)
+        if not ia.pick_file(tmp):
+            ia.download_icloud([(pid, tmp)], {})
+        src = ia.pick_file(tmp)
+        if not src:
+            print(f"  could not get video {i}; it is left out", flush=True)
+            continue
+        dur = float(byid[i].get("duration") or 0)
+        start = 0 if dur <= CLIP + 2 else min(dur * .15, dur - CLIP)   # skip the fumbling first seconds of long clips
+        out = os.path.join(VIDEOS, f"{i}.mp4")
+        for crf in (26, 31):
+            r = subprocess.run([ff, "-nostdin", "-v", "error", "-y", "-ss", f"{start:.2f}", "-i", src, "-t", str(CLIP),
+                                "-map", "0:v:0", "-map", "0:a:0?", "-map_metadata", "-1", "-map_chapters", "-1",
+                                "-vf", "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
+                                "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p",
+                                "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", out],
+                               capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            if r.returncode == 0 and os.path.getsize(out) < 14e6:
+                break
+        if r.returncode or not os.path.exists(out):
+            print(f"  could not make a clip of video {i}: {r.stderr.strip()[-160:]}", flush=True)
+            if os.path.exists(out):
+                os.remove(out)
+            continue
+        subprocess.run([ff, "-nostdin", "-v", "error", "-y", "-ss", "0.3", "-i", out, "-frames:v", "1", "-q:v", "3",
+                        os.path.join(RAW, f"{i}.jpg")], capture_output=True, stdin=subprocess.DEVNULL)
+        print(f"PROGRESS {n} {len(todo)}", flush=True)
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
 # ---------- building ----------
 
 def main():
@@ -276,21 +348,29 @@ def main():
     ok = [r["id"] for r in inv if r["kind"] == "photo" and r["id"] in when and "error" not in r
           and r["id"] not in dupes | bad | gone and labels.get(str(r["id"])) not in LEAVE_OUT
           and r.get("ext") != ".png"]
-    print(f"{len(ok)} photos can go in the scrapbook.", flush=True)
+    okv = [r["id"] for r in inv if r["kind"] == "video" and r["id"] in when and "error" not in r
+           and r["id"] not in dupes | bad | gone and labels.get(str(r["id"])) not in LEAVE_OUT
+           and float(r.get("duration") or 0) >= 2]
+    print(f"{len(ok)} photos and {len(okv)} videos can go in the scrapbook.", flush=True)
 
     # chapters: trips (pages = places) and years at home (pages = months)
     chapters = {}
-    for i in ok:
-        t = trips.get(str(i))
-        if t:
-            name, _, stop = t.partition("/")
-            title, _, w = name.rpartition(", ")
-            ch = chapters.setdefault("t:" + name, {"kind": "trip", "title": title or name, "when": w, "pages": {}})
-            ch["pages"].setdefault(stop or title or name, []).append(i)
-        else:
-            d = dt(when[i])
-            ch = chapters.setdefault(f"y:{d.year}", {"kind": "year", "title": f"{d.year} at home", "when": str(d.year), "pages": {}})
-            ch["pages"].setdefault(MONTHS[d.month - 1], []).append(i)
+    for kind, pool in (("pages", ok), ("vpages", okv)):
+        for i in pool:
+            t = trips.get(str(i))
+            if t:
+                name, _, stop = t.partition("/")
+                title, _, w = name.rpartition(", ")
+                key, heading = "t:" + name, stop or title or name
+                ch = chapters.setdefault(key, {"kind": "trip", "title": title or name, "when": w, "pages": {}, "vpages": {}})
+            else:
+                d = dt(when[i])
+                key, heading = f"y:{d.year}", MONTHS[d.month - 1]
+                ch = chapters.setdefault(key, {"kind": "year", "title": f"{d.year} at home", "when": str(d.year), "pages": {}, "vpages": {}})
+            if kind == "vpages" and key not in chapters:
+                continue
+            ch[kind].setdefault(heading, []).append(i)
+    chapters = {k: ch for k, ch in chapters.items() if ch["pages"]}  # a chapter needs photos; videos join them
     for ch in chapters.values():
         n = sum(len(v) for v in ch["pages"].values())
         ch["n"] = n
@@ -311,39 +391,67 @@ def main():
                 g = ids[s:s + 90]
                 jobs.append((key, heading, g, max(1, round(want * len(g) / len(ids))),
                              f"{'a trip to ' + ch['title'] if ch['kind'] == 'trip' else 'everyday life at home in ' + ch['when']}"
-                             f", {heading}"))
+                             f", {heading}", None))
+        for heading, ids in ch["vpages"].items():  # a video or two per place or month
+            if heading not in ch["pages"]:
+                continue
+            ids = sorted(ids, key=lambda i: when[i])[:90]
+            k = 1 if len(ids) < 8 or ch["kind"] == "year" else 2
+            tags = {i: f"VIDEO {float(byid[i].get('duration') or 0):.0f}s" for i in ids}
+            jobs.append((key, heading, ids, k, f"{'a trip to ' + ch['title'] if ch['kind'] == 'trip' else 'everyday life at home in ' + ch['when']}"
+                         f", {heading}", tags))
     with ThreadPoolExecutor(int(os.environ.get("CLAUDE_WORKERS", 3))) as ex:
-        results = list(ex.map(lambda j: pick(f"{j[0]}|{j[1]}", j[2], j[3], j[4]), jobs))
-    chosen = {}
-    for (key, heading, g, k, _), res in zip(jobs, results):
+        results = list(ex.map(lambda j: pick(f"{j[0]}|{j[1]}" + ("|v" if j[5] else ""), j[2], j[3], j[4], j[5]), jobs))
+    chosen, vchosen = {}, {}
+    for (key, heading, g, k, _, tags), res in zip(jobs, results):
         if res is None:
             waiting += 1
             continue
-        chosen.setdefault(key, {}).setdefault(heading, {}).update(res)
+        (vchosen if tags else chosen).setdefault(key, {}).setdefault(heading, {}).update(res)
+    # at most 4 clips per chapter and MAX_VIDEOS in all, trips first
+    budget = MAX_VIDEOS
+    for key, _ in sorted(order, key=lambda kv: kv[1]["kind"] != "trip"):
+        n = 0
+        for heading in list(vchosen.get(key, {})):
+            for i in list(vchosen[key][heading]):
+                if n >= 4 or budget <= 0:
+                    del vchosen[key][heading][i]
+                else:
+                    n += 1
+                    budget -= 1
     if waiting:
         print(f"  {waiting} pages got no answer from Claude (usage limit or not signed in); run again later "
               "to add them.", flush=True)
 
     all_ids = [i for pages in chosen.values() for pg in pages.values() for i in pg]
+    all_vids = [i for pages in vchosen.values() for pg in pages.values() for i in pg]
     fetch(all_ids, byid)
-    finish_all(all_ids, args.look)
+    fetch_videos(all_vids, byid)
+    finish_all(all_ids + all_vids, args.look)
     have = lambda i: os.path.exists(os.path.join(IMAGES, f"{i}.jpg"))
+    have_v = lambda i: have(i) and os.path.exists(os.path.join(VIDEOS, f"{i}.mp4"))
 
     for key, ch in order:
         pages = []
         for heading, ids in ch["pages"].items():
-            got = sorted((i for i in chosen.get(key, {}).get(heading, {}) if have(i)), key=lambda i: when[i])
+            caps = dict(chosen.get(key, {}).get(heading, {}))
+            vsel = vchosen.get(key, {}).get(heading, {})
+            caps.update(vsel)
+            got = sorted([i for i in chosen.get(key, {}).get(heading, {}) if have(i)]
+                         + [i for i in vsel if have_v(i)], key=lambda i: when[i])
             if not got:
                 continue
-            caps = chosen[key][heading]
             photos = []
             for i in got:
                 with Image.open(os.path.join(IMAGES, f"{i}.jpg")) as im:
                     w, h = im.size
-                photos.append({"src": f"images/{i}.jpg", "w": w, "h": h, "caption": caps.get(i, ""),
-                               "date": f"{dt(when[i]).day} {dt(when[i]):%b}"})
+                item = {"src": f"images/{i}.jpg", "w": w, "h": h, "caption": caps.get(i, ""),
+                        "date": f"{dt(when[i]).day} {dt(when[i]):%b}"}
+                if i in vsel:
+                    item.update(type="video", src=f"videos/{i}.mp4", poster=f"images/{i}.jpg")
+                photos.append(item)
             pts = [when[i] for i in got]
-            sub = span(pts) if ch["kind"] == "trip" else f"{len(got)} photos"
+            sub = span(pts) if ch["kind"] == "trip" else f"{len(got)} photos" + (" and videos" if any(i in vsel for i in got) else "")
             pages.append({"heading": heading, "sub": sub, "photos": photos, "first": min(pts)})
         if not pages:
             continue
@@ -351,8 +459,9 @@ def main():
         for p in pages:
             del p["first"]
         ts = [when[i] for ids in ch["pages"].values() for i in ids]
-        flat = [p for pg in pages for p in pg["photos"]]
-        cover = max(flat, key=lambda p: (p["w"] >= p["h"], bool(p["caption"])))["src"]
+        flat = [p for pg in pages for p in pg["photos"] if p.get("type") != "video"] or [p for pg in pages for p in pg["photos"]]
+        best = max(flat, key=lambda p: (p["w"] >= p["h"], bool(p["caption"])))
+        cover = best.get("poster", best["src"])
         c = {"id": slug(ch["title"] + "-" + ch["when"]), "kind": ch["kind"], "title": ch["title"], "when": ch["when"],
              "dates": span(ts) if ch["kind"] == "trip" else ch["when"], "places": [p["heading"] for p in pages] if ch["kind"] == "trip" else [],
              "cover": cover, "pages": pages}
@@ -360,7 +469,7 @@ def main():
         c["intro"] = words.get("intro", "")
         for pg in pages:  # the place's line, and its standout photo for the chapter's highlights
             pg["blurb"] = words.get(pg["heading"], "")
-            pg["lead"] = max(range(len(pg["photos"])), key=lambda j: (pg["photos"][j]["w"] >= pg["photos"][j]["h"], bool(pg["photos"][j]["caption"]), -j))
+            pg["lead"] = max(range(len(pg["photos"])), key=lambda j: (pg["photos"][j].get("type") != "video", pg["photos"][j]["w"] >= pg["photos"][j]["h"], bool(pg["photos"][j]["caption"]), -j))
         out_ch.append(c)
 
     years = sorted({dt(when[i]).year for i in ok})
@@ -375,13 +484,17 @@ def main():
             "note": f"Made {datetime.now():%d %b %Y} from our iCloud Photos.", "chapters": out_ch}
     save(os.path.join(SITE, "data.json"), book)
     shutil.copy(os.path.join(HERE, "scrapbook_page.html"), os.path.join(SITE, "index.html"))
-    used = {os.path.basename(p["src"]) for c in out_ch for pg in c["pages"] for p in pg["photos"]}
-    for f in os.listdir(IMAGES):  # photos dropped from the book since the last run
-        if f not in used:
-            os.remove(os.path.join(IMAGES, f))
-    n = len(used)
-    mb = sum(os.path.getsize(os.path.join(IMAGES, f)) for f in used) / 1e6
-    print(f"Scrapbook ready: {len(out_ch)} chapters, {n} photos ({mb:.0f} MB) in {os.path.relpath(SITE)}")
+    items = [p for c in out_ch for pg in c["pages"] for p in pg["photos"]]
+    used = {os.path.basename(p.get("poster", p["src"])) for p in items}
+    usedv = {os.path.basename(p["src"]) for p in items if p.get("type") == "video"}
+    for folder, keep in ((IMAGES, used), (VIDEOS, usedv)):  # dropped from the book since the last run
+        for f in os.listdir(folder) if os.path.isdir(folder) else []:
+            if f not in keep:
+                os.remove(os.path.join(folder, f))
+    mb = (sum(os.path.getsize(os.path.join(IMAGES, f)) for f in used)
+          + sum(os.path.getsize(os.path.join(VIDEOS, f)) for f in usedv)) / 1e6
+    print(f"Scrapbook ready: {len(out_ch)} chapters, {len(used) - len(usedv)} photos and {len(usedv)} video clips "
+          f"({mb:.0f} MB) in {os.path.relpath(SITE)}")
     print("To share it: open Claude Code in this folder and ask it to \"publish my scrapbook\".")
     if args.preview:
         port = 8790

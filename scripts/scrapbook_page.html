@@ -76,7 +76,10 @@ section.place .blurb{font:700 clamp(24px,2.8vw,40px)/1.1 var(--sans);letter-spac
 .row.left>figure{width:min(100%,66%)}
 .row.tall>figure{width:min(100%,46%)}
 figure button{display:block;width:100%;border-radius:12px;overflow:hidden}
-figure button img{transition:opacity .3s ease}
+figure button img,figure button video{transition:opacity .3s ease}
+figure button video{display:block;width:100%;height:auto;background:var(--card)}
+figure .play{position:absolute;left:12px;bottom:12px;font:700 12px/1 var(--sans);background:var(--shade);color:var(--fg);padding:6px 10px;border-radius:999px}
+figure button{position:relative}
 figure button:hover img{opacity:.9}
 figcaption{display:flex;justify-content:space-between;gap:16px;padding-top:10px;font:500 14px/1.4 var(--sans)}
 figcaption span:last-child{color:var(--fg2);white-space:nowrap}
@@ -92,7 +95,7 @@ footer.made{padding-block:0 56px;text-align:center}
 /* full-size view */
 .lb{position:fixed;inset:0;z-index:20;background:var(--scrim);display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:16px;padding:calc(16px + env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px))}
 .lb .top,.lb .foot{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-.lb img{max-width:100%;max-height:100%;width:auto;height:auto;margin:auto;object-fit:contain;min-height:0;background:transparent;border-radius:8px}
+.lb img,.lb video{max-width:100%;max-height:100%;width:auto;height:auto;margin:auto;object-fit:contain;min-height:0;background:transparent;border-radius:8px}
 .lb .foot span{font:500 16px/1.4 var(--sans)}
 .lb .ctl{display:flex;gap:8px}
 .lb .ctl button{min-height:40px;padding:0 16px;border-radius:999px;border:1px solid var(--rule);font:700 14px/1 var(--sans)}
@@ -104,7 +107,7 @@ footer.made{padding-block:0 56px;text-align:center}
 <main id="app"><div class="wrap empty"><span class="small mute">Opening</span><h1>Our Scrapbook</h1><p>Loading the photos…</p></div></main>
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="Photo">
   <div class="top"><span class="small mute" id="lbCount"></span><div class="ctl"><button id="lbClose">Close</button></div></div>
-  <img id="lbImg" alt="">
+  <img id="lbImg" alt=""><video id="lbVid" controls playsinline hidden></video>
   <div class="foot"><span id="lbCap"></span><div class="ctl"><button id="lbPrev">← Previous</button><button id="lbNext">Next →</button></div></div>
 </div>
 
@@ -137,7 +140,10 @@ function contents() {
 /* photos: a full-width single, matched-height pairs, and singles set to one side */
 function rows(photos, start) {
   const out = []; let i = 0, step = 0;
-  const fig = (p, k, flex) => `<figure${flex ? ` style="flex:${(p.w / p.h).toFixed(3)} 1 0"` : ""}><button data-k="${start + k}" aria-label="Open ${esc(p.caption || "photo")}"><img src="${esc(p.src)}" alt="${esc(p.caption || "")}" loading="lazy" width="${p.w}" height="${p.h}"></button>${p.caption || p.date ? `<figcaption><span>${esc(p.caption || "")}</span><span>${esc(p.date || "")}</span></figcaption>` : ""}</figure>`;
+  const media = p => p.type === "video"
+    ? `<video data-src="${esc(p.src)}" poster="${esc(p.poster)}" muted loop playsinline preload="none" width="${p.w}" height="${p.h}"></video><span class="play">▶ Video</span>`
+    : `<img src="${esc(p.src)}" alt="${esc(p.caption || "")}" loading="lazy" width="${p.w}" height="${p.h}">`;
+  const fig = (p, k, flex) => `<figure${flex ? ` style="flex:${(p.w / p.h).toFixed(3)} 1 0"` : ""}><button data-k="${start + k}" aria-label="Open ${esc(p.caption || (p.type === "video" ? "video" : "photo"))}">${media(p)}</button>${p.caption || p.date ? `<figcaption><span>${esc(p.caption || "")}</span><span>${esc(p.date || "")}</span></figcaption>` : ""}</figure>`;
   while (i < photos.length) {
     const p = photos[i], q = photos[i + 1], tall = p.h > p.w * 1.05, mode = step % 3;
     if (q && (mode !== 0 || (tall && q.h > q.w))) { out.push(`<div class="row pair">${fig(p, i, 1)}${fig(q, i + 1, 1)}</div>`); i += 2; }
@@ -166,17 +172,33 @@ function chapter(id) {
     + (hl ? `<div style="height:clamp(56px,8vw,120px)"></div>` + hl : "") + places
     + `<div class="wrap next"><span class="small mute">${B.chapters[i + 1] ? "Next chapter" : "Back to the first chapter"}</span>${card(`#c-${esc(next.id)}`, next.cover, next.title, chapterLine(next))}</div>`;
   $("app").querySelectorAll("figure button").forEach(b => b.onclick = () => openLb(all, +b.dataset.k));
+  watchClips();
   $("app").querySelectorAll("button.card").forEach(b => b.onclick = () => $("place-" + b.dataset.place).scrollIntoView({behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"}));
+}
+
+/* clips play silently while on screen, pause off screen; with reduced motion they wait for a tap */
+let clipObs = null;
+function watchClips() {
+  if (clipObs) clipObs.disconnect();
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  clipObs = new IntersectionObserver(es => es.forEach(e => {
+    const v = e.target;
+    if (e.isIntersecting) { if (!v.src) v.src = v.dataset.src; if (!still) v.play().catch(() => {}); }
+    else if (!v.paused) v.pause();
+  }), {rootMargin: "200px 0px"});
+  $("app").querySelectorAll("video[data-src]").forEach(v => clipObs.observe(v));
 }
 
 function openLb(list, at) { lbList = list; lbAt = at; lastFocus = document.activeElement; $("lb").hidden = false; showLb(); $("lbClose").focus(); }
 function showLb() {
-  const p = lbList[lbAt];
-  $("lbImg").src = p.src; $("lbImg").alt = p.caption || "";
+  const p = lbList[lbAt], vid = p.type === "video", V = $("lbVid");
+  $("lbImg").hidden = vid; V.hidden = !vid;
+  if (vid) { V.src = p.src; V.poster = p.poster || ""; V.muted = false; V.play().catch(() => {}); }
+  else { V.pause(); V.removeAttribute("src"); $("lbImg").src = p.src; $("lbImg").alt = p.caption || ""; }
   $("lbCap").textContent = p.caption || ""; $("lbCount").textContent = `${two(lbAt + 1)} / ${two(lbList.length)}${p.date ? "  ·  " + p.date : ""}`;
   $("lbPrev").disabled = lbAt === 0; $("lbNext").disabled = lbAt === lbList.length - 1;
 }
-function closeLb() { $("lb").hidden = true; lastFocus && lastFocus.focus && lastFocus.focus(); }
+function closeLb() { $("lbVid").pause(); $("lb").hidden = true; lastFocus && lastFocus.focus && lastFocus.focus(); }
 $("lbPrev").onclick = () => { if (lbAt > 0) { lbAt--; showLb(); } };
 $("lbNext").onclick = () => { if (lbAt < lbList.length - 1) { lbAt++; showLb(); } };
 $("lbClose").onclick = closeLb;
